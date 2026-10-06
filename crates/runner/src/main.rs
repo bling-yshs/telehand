@@ -32,6 +32,21 @@ enum Command {
 enum ProjectCommand {
     /// Add a project with its main folder.
     Add { name: String, dir: PathBuf },
+    /// Manage a project's extra folders (writable in addition to the main folder).
+    Folder {
+        #[command(subcommand)]
+        command: FolderCommand,
+    },
+    /// List projects.
+    List,
+    /// Remove a project.
+    Remove { name: String },
+}
+
+#[derive(Subcommand)]
+enum FolderCommand {
+    /// Add an extra folder to a project.
+    Add { name: String, dir: PathBuf },
 }
 
 const RESTART_HINT: &str = "Restart `telehand-runner run` for the change to take effect.";
@@ -94,6 +109,34 @@ async fn main() -> anyhow::Result<()> {
                     "Added project {} (main folder: {}). {RESTART_HINT}",
                     project.name, project.main_folder
                 );
+            }
+            ProjectCommand::Folder {
+                command: FolderCommand::Add { name, dir },
+            } => {
+                let project = config.add_folder(&name, &dir)?.clone();
+                config.save(&path)?;
+                println!(
+                    "Added folder {} to project {}. {RESTART_HINT}",
+                    project.extra_folders.last().expect("just added"),
+                    project.name
+                );
+            }
+            ProjectCommand::List => {
+                if config.projects.is_empty() {
+                    println!("No projects. Add one with `telehand-runner project add <name> <dir>`.");
+                }
+                for project in &config.projects {
+                    println!("{}", project.name);
+                    println!("  main folder: {}", project.main_folder);
+                    if !project.extra_folders.is_empty() {
+                        println!("  extra folders: {}", project.extra_folders.join(", "));
+                    }
+                }
+            }
+            ProjectCommand::Remove { name } => {
+                config.remove_project(&name)?;
+                config.save(&path)?;
+                println!("Removed project {name}. {RESTART_HINT}");
             }
         },
     }

@@ -72,6 +72,26 @@ impl RunnerConfig {
         });
         Ok(self.projects.last().expect("just pushed"))
     }
+
+    /// Add an extra folder to an existing project.
+    pub fn add_folder(&mut self, name: &str, dir: &Path) -> anyhow::Result<&ProjectInfo> {
+        let folder = canonical_dir(dir)?;
+        let Some(project) = self.projects.iter_mut().find(|p| p.name == name) else {
+            bail!("project '{name}' does not exist");
+        };
+        if project.main_folder == folder || project.extra_folders.contains(&folder) {
+            bail!("{folder} is already a folder of project '{name}'");
+        }
+        project.extra_folders.push(folder);
+        Ok(project)
+    }
+
+    pub fn remove_project(&mut self, name: &str) -> anyhow::Result<ProjectInfo> {
+        let Some(index) = self.projects.iter().position(|p| p.name == name) else {
+            bail!("project '{name}' does not exist");
+        };
+        Ok(self.projects.remove(index))
+    }
 }
 
 /// The canonical absolute path of an existing directory.
@@ -107,6 +127,30 @@ mod tests {
             loaded.project("demo").unwrap().main_folder,
             tmp.path().canonicalize().unwrap().to_string_lossy()
         );
+    }
+
+    #[test]
+    fn extra_folders_and_removal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let main = tmp.path().join("main");
+        let extra = tmp.path().join("extra");
+        std::fs::create_dir_all(&main).unwrap();
+        std::fs::create_dir_all(&extra).unwrap();
+        let mut config = RunnerConfig::default();
+        config.add_project("demo", &main).unwrap();
+
+        let project = config.add_folder("demo", &extra).unwrap();
+        assert_eq!(
+            project.extra_folders,
+            vec![extra.canonicalize().unwrap().to_string_lossy().into_owned()]
+        );
+        assert!(config.add_folder("demo", &extra).is_err());
+        assert!(config.add_folder("demo", &main).is_err());
+        assert!(config.add_folder("nope", &extra).is_err());
+
+        assert_eq!(config.remove_project("demo").unwrap().name, "demo");
+        assert!(config.projects.is_empty());
+        assert!(config.remove_project("demo").is_err());
     }
 
     #[test]
