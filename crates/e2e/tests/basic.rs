@@ -1,4 +1,4 @@
-use telehand_e2e::{Env, json};
+use telehand_e2e::{Env, json, mcp_status};
 
 #[tokio::test]
 async fn agent_selects_a_project_and_reads_files() {
@@ -56,13 +56,5 @@ async fn unknown_key_is_not_found() {
         "{}/mcp/00000000-0000-0000-0000-000000000000",
         env.server_url
     );
-    let response = reqwest::Client::new()
-        .post(url)
-        .header("content-type", "application/json")
-        .header("accept", "application/json, text/event-stream")
-        .body(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"#)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status().as_u16(), 404);
+    assert_eq!(mcp_status(&url).await, 404);
 }

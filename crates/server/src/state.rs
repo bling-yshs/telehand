@@ -11,7 +11,7 @@ use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
 use serde_json::Value;
-use telehand_proto::{ProjectInfo, ServerMessage, ToolOutput};
+use telehand_proto::{CLOSE_INVALID_KEY, ProjectInfo, ServerMessage, ToolOutput};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -83,6 +83,27 @@ impl AppState {
                 entry.current_project = Some(project.to_string());
             }
         });
+    }
+
+    pub fn create_key(&self, name: Option<String>) -> String {
+        let (key, entry) = crate::keys::new_entry(name);
+        self.keys.update(|keys| keys.insert(key.clone(), entry));
+        key
+    }
+
+    /// Remove `key`: its runner is disconnected and its MCP endpoint disappears.
+    pub fn remove_key(&self, key: &str) -> bool {
+        if !self.keys.update(|keys| keys.remove(key).is_some()) {
+            return false;
+        }
+        self.mcp_services.lock().unwrap().remove(key);
+        if let Some(runner) = self.runners.lock().unwrap().remove(key) {
+            let _ = runner.tx.send(Outbound::Close(
+                CLOSE_INVALID_KEY,
+                "key has been removed".into(),
+            ));
+        }
+        true
     }
 
     /// The projects reported by the runner for `key`, or `None` if it is offline.

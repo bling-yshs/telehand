@@ -4,13 +4,13 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 状态文件结构：以 key 为键，值含备注名、创建时间、当前 project（可空）
-- [ ] `select_project` 更新内存并触发延迟写盘；连续变更只在最后一次变更 100ms 后写盘一次
-- [ ] 写盘采用临时文件 + 原子重命名
-- [ ] 收到 Ctrl-C / SIGTERM 时立即写盘再退出
-- [ ] server 重启后 `current_project` 返回之前的选择
-- [ ] 未选择时 `read` / `write` / `edit` 返回提示先 list/select 的错误
-- [ ] 所选 project 已不在 runner 上报列表中时同样报错（不自动回退）
-- [ ] 端到端测试覆盖：选择后重启 server 仍保留；未选择时报错；所选 project 被删除后报错
+- [x] 状态文件结构：以 key 为键，值含备注名、创建时间、当前 project（可空）
+- [x] `select_project` 更新内存并触发延迟写盘；连续变更只在最后一次变更 100ms 后写盘一次
+- [x] 写盘采用临时文件 + 原子重命名
+- [x] 收到 Ctrl-C / SIGTERM 时立即写盘再退出
+- [x] server 重启后 `current_project` 返回之前的选择
+- [x] 未选择时 `read` / `write` / `edit` 返回提示先 list/select 的错误
+- [x] 所选 project 已不在 runner 上报列表中时同样报错（不自动回退）
+- [x] 端到端测试覆盖：选择后重启 server 仍保留；未选择时报错；所选 project 被删除后报错

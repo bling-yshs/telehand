@@ -12,6 +12,7 @@ use axum::{
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+pub mod admin;
 pub mod keys;
 mod mcp;
 mod state;
@@ -60,6 +61,13 @@ pub async fn start(options: ServeOptions) -> anyhow::Result<RunningServer> {
     let shutdown = CancellationToken::new();
     let flusher = tokio::spawn(keys.clone().run_flusher(shutdown.clone()));
     let state = Arc::new(AppState::new(keys, shutdown.clone()));
+    let admin_listener = admin::bind(&options.data_dir)?;
+    let admin = tokio::spawn(admin::serve(
+        admin_listener,
+        admin::socket_path(&options.data_dir),
+        state.clone(),
+        shutdown.clone(),
+    ));
 
     let app = Router::new()
         .route(telehand_proto::WS_PATH, get(ws::handler))
@@ -76,6 +84,7 @@ pub async fn start(options: ServeOptions) -> anyhow::Result<RunningServer> {
         // Make sure pending key changes are on disk before reporting the stop.
         token.cancel();
         let _ = flusher.await;
+        let _ = admin.await;
         served
     });
     Ok(RunningServer {

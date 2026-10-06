@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, path::PathBuf};
 
 use clap::{Parser, Subcommand};
-use telehand_server::{ServeOptions, keys};
+use telehand_server::{ServeOptions, admin};
 
 #[derive(Parser)]
 #[command(name = "telehand-server", version, about = "Telehand server")]
@@ -42,6 +42,12 @@ enum KeyCommand {
         #[arg(long, env = "TELEHAND_DATA_DIR", default_value = "./data")]
         data_dir: PathBuf,
     },
+    /// Remove a key; its runner is disconnected and its MCP URL stops working.
+    Rm {
+        key: String,
+        #[arg(long, env = "TELEHAND_DATA_DIR", default_value = "./data")]
+        data_dir: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -65,18 +71,23 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Key { command } => match command {
             KeyCommand::Create { name, data_dir } => {
-                let key = keys::create_in_file(&data_dir, name)?;
+                let key = admin::create_key(&data_dir, name).await?;
                 println!("{key}");
                 Ok(())
             }
             KeyCommand::List { data_dir } => {
-                for (key, entry) in keys::load(&data_dir)? {
+                for (key, entry) in admin::list_keys(&data_dir).await? {
                     println!(
                         "{key}\t{}\tcreated_at={}",
                         entry.name.as_deref().unwrap_or("-"),
                         entry.created_at
                     );
                 }
+                Ok(())
+            }
+            KeyCommand::Rm { key, data_dir } => {
+                admin::remove_key(&data_dir, &key).await?;
+                println!("Removed key {key}");
                 Ok(())
             }
         },
@@ -87,9 +98,8 @@ async fn main() -> anyhow::Result<()> {
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
-        let mut term =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("install SIGTERM handler");
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler");
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {}
             _ = term.recv() => {}

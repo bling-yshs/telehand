@@ -205,6 +205,20 @@ impl Client {
     }
 }
 
+/// HTTP status of an MCP `initialize` POST to `url`.
+pub async fn mcp_status(url: &str) -> u16 {
+    reqwest::Client::new()
+        .post(url)
+        .header("content-type", "application/json")
+        .header("accept", "application/json, text/event-stream")
+        .body(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"#)
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16()
+}
+
 /// All text blocks of a tool result, joined by newlines.
 pub fn text(result: &CallToolResult) -> String {
     result
