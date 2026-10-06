@@ -25,7 +25,10 @@ async fn every_tool_fails_fast_while_the_runner_is_offline() {
         let started = Instant::now();
         let error = client.err(tool, args).await;
         assert!(error.contains("Runner offline"), "{tool}: {error}");
-        assert!(started.elapsed() < Duration::from_secs(2), "{tool} was slow");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{tool} was slow"
+        );
     }
 }
 
