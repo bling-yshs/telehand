@@ -207,8 +207,16 @@ fn resize(bytes: &[u8], mime_type: &str) -> Option<Resized> {
         if w == 1 && h == 1 {
             return None;
         }
-        let next_w = if w == 1 { 1 } else { ((w as f64 * 0.75).floor() as u32).max(1) };
-        let next_h = if h == 1 { 1 } else { ((h as f64 * 0.75).floor() as u32).max(1) };
+        let next_w = if w == 1 {
+            1
+        } else {
+            ((w as f64 * 0.75).floor() as u32).max(1)
+        };
+        let next_h = if h == 1 {
+            1
+        } else {
+            ((h as f64 * 0.75).floor() as u32).max(1)
+        };
         if (next_w, next_h) == (w, h) {
             return None;
         }
@@ -238,10 +246,12 @@ pub fn process(bytes: &[u8], mime_type: &str) -> Result<Processed, String> {
     let (bytes, mime_type, converted_from) = if supported {
         (bytes.to_vec(), mime_type.to_string(), None)
     } else {
-        let png = decode(bytes).and_then(|image| encode_png(&image)).ok_or_else(|| {
-            "[Image omitted: could not be converted to a supported inline image format.]"
-                .to_string()
-        })?;
+        let png = decode(bytes)
+            .and_then(|image| encode_png(&image))
+            .ok_or_else(|| {
+                "[Image omitted: could not be converted to a supported inline image format.]"
+                    .to_string()
+            })?;
         (png, "image/png".to_string(), Some(mime_type.to_string()))
     };
 
@@ -274,7 +284,8 @@ mod tests {
     use super::*;
 
     fn encoded(width: u32, height: u32, format: ImageFormat) -> Vec<u8> {
-        let image = DynamicImage::ImageRgb8(RgbImage::from_pixel(width, height, Rgb([10, 200, 30])));
+        let image =
+            DynamicImage::ImageRgb8(RgbImage::from_pixel(width, height, Rgb([10, 200, 30])));
         let mut out = Vec::new();
         image.write_to(&mut Cursor::new(&mut out), format).unwrap();
         out
@@ -282,10 +293,22 @@ mod tests {
 
     #[test]
     fn mime_types_are_sniffed_from_content() {
-        assert_eq!(detect_mime_type(&encoded(4, 4, ImageFormat::Png)), Some("image/png"));
-        assert_eq!(detect_mime_type(&encoded(4, 4, ImageFormat::Jpeg)), Some("image/jpeg"));
-        assert_eq!(detect_mime_type(&encoded(4, 4, ImageFormat::Gif)), Some("image/gif"));
-        assert_eq!(detect_mime_type(&encoded(4, 4, ImageFormat::Bmp)), Some("image/bmp"));
+        assert_eq!(
+            detect_mime_type(&encoded(4, 4, ImageFormat::Png)),
+            Some("image/png")
+        );
+        assert_eq!(
+            detect_mime_type(&encoded(4, 4, ImageFormat::Jpeg)),
+            Some("image/jpeg")
+        );
+        assert_eq!(
+            detect_mime_type(&encoded(4, 4, ImageFormat::Gif)),
+            Some("image/gif")
+        );
+        assert_eq!(
+            detect_mime_type(&encoded(4, 4, ImageFormat::Bmp)),
+            Some("image/bmp")
+        );
         assert_eq!(detect_mime_type(b"plain text"), None);
         assert_eq!(detect_mime_type(b""), None);
     }
@@ -305,7 +328,9 @@ mod tests {
         let processed = process(&png, "image/png").unwrap();
         assert_eq!(
             processed.hints,
-            vec!["[Image: original 3000x1000, displayed at 2000x667. Multiply coordinates by 1.50 to map to original image.]"]
+            vec![
+                "[Image: original 3000x1000, displayed at 2000x667. Multiply coordinates by 1.50 to map to original image.]"
+            ]
         );
         let decoded = image::load_from_memory(&STANDARD.decode(&processed.data).unwrap()).unwrap();
         assert_eq!((decoded.width(), decoded.height()), (2000, 667));
