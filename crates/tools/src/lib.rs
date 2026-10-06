@@ -7,6 +7,7 @@ use telehand_proto::{ToolOutput, tool_defs};
 
 mod path;
 mod read;
+mod truncate;
 
 /// The folders of the project a tool call operates on.
 #[derive(Debug, Clone)]
