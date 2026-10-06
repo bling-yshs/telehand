@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!(addr = %server.addr, "listening");
             let token = server.shutdown_token();
             tokio::spawn(async move {
-                let _ = tokio::signal::ctrl_c().await;
+                shutdown_signal().await;
                 token.cancel();
             });
             server.wait().await
@@ -80,5 +80,23 @@ async fn main() -> anyhow::Result<()> {
                 Ok(())
             }
         },
+    }
+}
+
+/// Ctrl-C, or SIGTERM on Unix.
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut term =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("install SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
     }
 }

@@ -15,7 +15,7 @@ use telehand_proto::{ProjectInfo, ServerMessage, ToolOutput};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::{keys::Keys, mcp::McpHandler};
+use crate::{mcp::McpHandler, store::KeyStore};
 
 pub const TOOL_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -44,7 +44,7 @@ pub enum CallError {
 }
 
 pub struct AppState {
-    pub keys: Mutex<Keys>,
+    pub keys: Arc<KeyStore>,
     pub runners: Mutex<HashMap<String, RunnerHandle>>,
     pub mcp_services: Mutex<HashMap<String, McpService>>,
     pub shutdown: CancellationToken,
@@ -52,9 +52,9 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(keys: Keys, shutdown: CancellationToken) -> Self {
+    pub fn new(keys: Arc<KeyStore>, shutdown: CancellationToken) -> Self {
         Self {
-            keys: Mutex::new(keys),
+            keys,
             runners: Mutex::new(HashMap::new()),
             mcp_services: Mutex::new(HashMap::new()),
             shutdown,
@@ -67,21 +67,22 @@ impl AppState {
     }
 
     pub fn key_exists(&self, key: &str) -> bool {
-        self.keys.lock().unwrap().contains_key(key)
+        self.keys.read(|keys| keys.contains_key(key))
     }
 
     pub fn current_project(&self, key: &str) -> Option<String> {
-        self.keys
-            .lock()
-            .unwrap()
-            .get(key)
-            .and_then(|entry| entry.current_project.clone())
+        self.keys.read(|keys| {
+            keys.get(key)
+                .and_then(|entry| entry.current_project.clone())
+        })
     }
 
     pub fn set_current_project(&self, key: &str, project: &str) {
-        if let Some(entry) = self.keys.lock().unwrap().get_mut(key) {
-            entry.current_project = Some(project.to_string());
-        }
+        self.keys.update(|keys| {
+            if let Some(entry) = keys.get_mut(key) {
+                entry.current_project = Some(project.to_string());
+            }
+        });
     }
 
     /// The projects reported by the runner for `key`, or `None` if it is offline.

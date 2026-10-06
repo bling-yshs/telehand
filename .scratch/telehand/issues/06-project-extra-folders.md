@@ -4,12 +4,12 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] runner `project folder add <name> <dir>` 为已有 project 添加额外文件夹；project 不存在时报错
-- [ ] runner `project list` 列出所有 project 及其主文件夹、额外文件夹
-- [ ] runner `project remove <name>` 删除 project
-- [ ] 修改配置的命令执行后提示需重启 `run` 才生效
-- [ ] 额外文件夹内的 write/edit 被允许；相对路径仍相对主文件夹解析
-- [ ] `list_project` / `current_project` 返回中包含额外文件夹
-- [ ] 端到端测试：添加额外文件夹并重启 runner 后，向额外文件夹 write 成功；未添加前被拒
+- [x] runner `project folder add <name> <dir>` 为已有 project 添加额外文件夹；project 不存在时报错
+- [x] runner `project list` 列出所有 project 及其主文件夹、额外文件夹
+- [x] runner `project remove <name>` 删除 project
+- [x] 修改配置的命令执行后提示需重启 `run` 才生效
+- [x] 额外文件夹内的 write/edit 被允许；相对路径仍相对主文件夹解析
+- [x] `list_project` / `current_project` 返回中包含额外文件夹
+- [x] 端到端测试：添加额外文件夹并重启 runner 后，向额外文件夹 write 成功；未添加前被拒

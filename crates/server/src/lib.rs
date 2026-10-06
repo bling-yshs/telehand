@@ -15,9 +15,11 @@ use tokio_util::sync::CancellationToken;
 pub mod keys;
 mod mcp;
 mod state;
+mod store;
 mod ws;
 
 use state::AppState;
+use store::KeyStore;
 
 pub struct ServeOptions {
     pub listen: SocketAddr,
@@ -51,8 +53,12 @@ impl RunningServer {
 
 /// Bind and start serving in the background.
 pub async fn start(options: ServeOptions) -> anyhow::Result<RunningServer> {
-    let keys = keys::load(&options.data_dir)?;
+    let keys = Arc::new(KeyStore::new(
+        options.data_dir.clone(),
+        keys::load(&options.data_dir)?,
+    ));
     let shutdown = CancellationToken::new();
+    let flusher = tokio::spawn(keys.clone().run_flusher(shutdown.clone()));
     let state = Arc::new(AppState::new(keys, shutdown.clone()));
 
     let app = Router::new()
@@ -64,9 +70,13 @@ pub async fn start(options: ServeOptions) -> anyhow::Result<RunningServer> {
     let addr = listener.local_addr()?;
     let token = shutdown.clone();
     let task = tokio::spawn(async move {
-        axum::serve(listener, app)
-            .with_graceful_shutdown(token.cancelled_owned())
-            .await
+        let served = axum::serve(listener, app)
+            .with_graceful_shutdown(token.clone().cancelled_owned())
+            .await;
+        // Make sure pending key changes are on disk before reporting the stop.
+        token.cancel();
+        let _ = flusher.await;
+        served
     });
     Ok(RunningServer {
         addr,

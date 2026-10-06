@@ -96,6 +96,19 @@ impl Env {
             server.stop().await.unwrap();
         }
     }
+
+    /// Stop the server and start a new one (on a new port) with the same data dir.
+    pub async fn restart_server(&mut self) {
+        self.stop_server().await;
+        let server = telehand_server::start(ServeOptions {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            data_dir: self.data_dir.clone(),
+        })
+        .await
+        .unwrap();
+        self.server_url = format!("http://{}", server.addr);
+        self.server = Some(server);
+    }
 }
 
 pub struct Runner {

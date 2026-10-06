@@ -12,6 +12,7 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -30,7 +31,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           set -o pipefail
-          cargo test --workspace --no-fail-fast 2>&1 | tee test.log
+          timeout 1200 cargo test --workspace --no-fail-fast 2>&1 | tee test.log
       - name: Annotate test failures
         if: ${{ failure() }}
         run: python3 .github/scripts/annotate.py test test.log --tests
