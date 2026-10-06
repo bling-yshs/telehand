@@ -28,7 +28,10 @@ async fn large_files_are_paged_through_mcp() {
     let beyond = client
         .err("read", json!({"path": "big.txt", "offset": 9999}))
         .await;
-    assert_eq!(beyond, "Offset 9999 is beyond end of file (2501 lines total)");
+    assert_eq!(
+        beyond,
+        "Offset 9999 is beyond end of file (2501 lines total)"
+    );
 
     runner.stop().await;
 }

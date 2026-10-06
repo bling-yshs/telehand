@@ -169,7 +169,11 @@ mod tests {
     async fn offset_and_limit_select_lines() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.txt"), numbered(10)).unwrap();
-        let out = read(dir.path(), json!({"path": "a.txt", "offset": 3, "limit": 2})).await;
+        let out = read(
+            dir.path(),
+            json!({"path": "a.txt", "offset": 3, "limit": 2}),
+        )
+        .await;
         assert_eq!(
             text(&out),
             "line 3\nline 4\n\n[7 more lines in file. Use offset=5 to continue.]"

@@ -7,7 +7,10 @@ use unicode_normalization::UnicodeNormalization;
 const NARROW_NO_BREAK_SPACE: char = '\u{202F}';
 
 fn is_unicode_space(c: char) -> bool {
-    matches!(c, '\u{00A0}' | '\u{2000}'..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}')
+    matches!(
+        c,
+        '\u{00A0}' | '\u{2000}'..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}'
+    )
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -157,7 +160,10 @@ mod tests {
 
     #[test]
     fn agent_path_spellings_are_normalized() {
-        assert_eq!(resolve(Path::new("/p"), "@src/a.rs"), PathBuf::from("/p/src/a.rs"));
+        assert_eq!(
+            resolve(Path::new("/p"), "@src/a.rs"),
+            PathBuf::from("/p/src/a.rs")
+        );
         assert_eq!(
             resolve(Path::new("/p"), "a\u{00A0}b\u{3000}c"),
             PathBuf::from("/p/a b c")

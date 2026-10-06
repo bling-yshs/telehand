@@ -20,12 +20,6 @@ pub struct Truncation {
     pub first_line_exceeds_limit: bool,
 }
 
-impl Truncation {
-    pub fn truncated(&self) -> bool {
-        self.truncated_by.is_some()
-    }
-}
-
 /// Human-readable size, as pi's `formatSize`.
 pub fn format_size(bytes: usize) -> String {
     if bytes < 1024 {
@@ -109,7 +103,7 @@ mod tests {
     fn content_within_limits_is_untouched() {
         let t = truncate_head("a\nb\n", 2, 100);
         assert_eq!(t.content, "a\nb\n");
-        assert!(!t.truncated());
+        assert_eq!(t.truncated_by, None);
         assert_eq!(t.output_lines, 2);
     }
 
