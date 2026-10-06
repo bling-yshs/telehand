@@ -15,9 +15,11 @@ COPY . .
 RUN cargo build --release -p telehand-server
 
 FROM debian:trixie-slim
-COPY --from=builder /src/target/release/telehand-server /usr/local/bin/telehand-server
-ENV TELEHAND_DATA_DIR=/data
-VOLUME /data
+WORKDIR /app
+COPY --from=builder /src/target/release/telehand-server /app/telehand-server
+ENV PATH="/app:${PATH}" \
+    TELEHAND_DATA_DIR=/app/data
+VOLUME /app/data
 EXPOSE 20250
 ENTRYPOINT ["telehand-server"]
 CMD ["serve", "--listen", "0.0.0.0:20250"]
