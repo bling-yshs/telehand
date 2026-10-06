@@ -96,12 +96,19 @@ async fn shutdown_signal() {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             .expect("install SIGTERM handler");
         tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
+            _ = ctrl_c() => {}
             _ = term.recv() => {}
         }
     }
     #[cfg(not(unix))]
-    {
-        let _ = tokio::signal::ctrl_c().await;
+    ctrl_c().await;
+}
+
+/// Resolves on Ctrl-C; never resolves if Ctrl-C cannot be listened for,
+/// rather than shutting down at once.
+async fn ctrl_c() {
+    if let Err(e) = tokio::signal::ctrl_c().await {
+        tracing::warn!(error = %e, "cannot listen for Ctrl-C");
+        std::future::pending::<()>().await;
     }
 }

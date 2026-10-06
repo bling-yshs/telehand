@@ -99,15 +99,36 @@ pub fn canonical_dir(dir: &Path) -> anyhow::Result<String> {
     let path = dir
         .canonicalize()
         .with_context(|| format!("folder {} does not exist", dir.display()))?;
-    if !path.is_dir() {
-        bail!("{} is not a folder", path.display());
+    let path = strip_verbatim(&path.to_string_lossy());
+    if !Path::new(&path).is_dir() {
+        bail!("{path} is not a folder");
     }
-    Ok(path.to_string_lossy().into_owned())
+    Ok(path)
+}
+
+/// Windows' `canonicalize` returns verbatim paths (`\\?\C:\x`, `\\?\UNC\host\share`);
+/// show them the usual way (`C:\x`, `\\host\share`).
+fn strip_verbatim(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
+    match path.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => rest.to_string(),
+        _ => path.to_string(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verbatim_windows_paths_are_shown_plainly() {
+        assert_eq!(strip_verbatim(r"\\?\C:\Users\me"), r"C:\Users\me");
+        assert_eq!(strip_verbatim(r"\\?\UNC\host\share\x"), r"\\host\share\x");
+        assert_eq!(strip_verbatim(r"\\?\Volume{abc}\x"), r"\\?\Volume{abc}\x");
+        assert_eq!(strip_verbatim("/home/me"), "/home/me");
+    }
 
     #[test]
     fn projects_round_trip_through_the_file() {

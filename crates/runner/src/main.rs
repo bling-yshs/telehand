@@ -85,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
             let shutdown = CancellationToken::new();
             let token = shutdown.clone();
             tokio::spawn(async move {
-                let _ = tokio::signal::ctrl_c().await;
+                shutdown_signal().await;
                 token.cancel();
             });
             let exit = telehand_runner::run(config, shutdown, |url| {
@@ -144,4 +144,29 @@ async fn main() -> anyhow::Result<()> {
         },
     }
     Ok(())
+}
+
+/// Ctrl-C, or SIGTERM on Unix.
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler");
+        tokio::select! {
+            _ = ctrl_c() => {}
+            _ = term.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    ctrl_c().await;
+}
+
+/// Resolves on Ctrl-C. Terminals without a console (e.g. Git Bash's mintty on
+/// Windows) cannot deliver Ctrl-C; then this never resolves instead of
+/// shutting the runner down at once.
+async fn ctrl_c() {
+    if let Err(e) = tokio::signal::ctrl_c().await {
+        tracing::warn!(error = %e, "cannot listen for Ctrl-C; close the window to stop the runner");
+        std::future::pending::<()>().await;
+    }
 }
