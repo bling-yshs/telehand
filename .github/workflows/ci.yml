@@ -13,12 +13,16 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy, rustfmt
       - name: Format
-        run: cargo fmt --all --check
+        run: |
+          cargo fmt --all --check > fmt.diff 2>&1 || {
+            python3 .github/scripts/annotate.py rustfmt fmt.diff
+            exit 1
+          }
       - name: Clippy
         if: ${{ !cancelled() }}
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -29,4 +33,4 @@ jobs:
           cargo test --workspace --no-fail-fast 2>&1 | tee test.log
       - name: Annotate test failures
         if: ${{ failure() }}
-        run: python3 .github/scripts/annotate_tests.py test.log
+        run: python3 .github/scripts/annotate.py test test.log --tests

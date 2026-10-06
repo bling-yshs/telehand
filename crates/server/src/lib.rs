@@ -53,11 +53,7 @@ impl RunningServer {
 pub async fn start(options: ServeOptions) -> anyhow::Result<RunningServer> {
     let keys = keys::load(&options.data_dir)?;
     let shutdown = CancellationToken::new();
-    let state = Arc::new(AppState::new(
-        options.data_dir.clone(),
-        keys,
-        shutdown.clone(),
-    ));
+    let state = Arc::new(AppState::new(keys, shutdown.clone()));
 
     let app = Router::new()
         .route(telehand_proto::WS_PATH, get(ws::handler))

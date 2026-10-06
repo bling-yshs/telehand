@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    path::PathBuf,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
@@ -45,7 +44,6 @@ pub enum CallError {
 }
 
 pub struct AppState {
-    pub data_dir: PathBuf,
     pub keys: Mutex<Keys>,
     pub runners: Mutex<HashMap<String, RunnerHandle>>,
     pub mcp_services: Mutex<HashMap<String, McpService>>,
@@ -54,9 +52,8 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(data_dir: PathBuf, keys: Keys, shutdown: CancellationToken) -> Self {
+    pub fn new(keys: Keys, shutdown: CancellationToken) -> Self {
         Self {
-            data_dir,
             keys: Mutex::new(keys),
             runners: Mutex::new(HashMap::new()),
             mcp_services: Mutex::new(HashMap::new()),
