@@ -31,7 +31,14 @@ enum Command {
 #[derive(Subcommand)]
 enum ProjectCommand {
     /// Add a project with its main folder.
-    Add { name: String, dir: PathBuf },
+    Add {
+        dir: PathBuf,
+        /// Project name; defaults to the folder's name.
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Rename a project.
+    Rename { name: String, new_name: String },
     /// Manage a project's extra folders (writable in addition to the main folder).
     Folder {
         #[command(subcommand)]
@@ -103,13 +110,18 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Command::Project { command } => match command {
-            ProjectCommand::Add { name, dir } => {
-                let project = config.add_project(&name, &dir)?.clone();
+            ProjectCommand::Add { dir, name } => {
+                let project = config.add_project(&dir, name.as_deref())?.clone();
                 config.save(&path)?;
                 println!(
                     "Added project {} (main folder: {}). {RESTART_HINT}",
                     project.name, project.main_folder
                 );
+            }
+            ProjectCommand::Rename { name, new_name } => {
+                config.rename_project(&name, &new_name)?;
+                config.save(&path)?;
+                println!("Renamed project {name} to {new_name}. {RESTART_HINT}");
             }
             ProjectCommand::Folder {
                 command: FolderCommand::Add { name, dir },
@@ -125,7 +137,7 @@ async fn main() -> anyhow::Result<()> {
             ProjectCommand::List => {
                 if config.projects.is_empty() {
                     println!(
-                        "No projects. Add one with `telehand-runner project add <name> <dir>`."
+                        "No projects. Add one with `telehand-runner project add <dir> [--name <name>]`."
                     );
                 }
                 for project in &config.projects {

@@ -46,12 +46,12 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 
 ### project 管理（runner 主人）
 
-24. 作为 runner 主人，我希望用 `project add <name> <dir>` 注册一个带主文件夹的 project，以便 agent 有明确的工作目录。
-25. 作为 runner 主人，我希望 project 名称唯一，以便 agent 用名称选择时不产生歧义。
+24. 作为 runner 主人，我希望用 `project add <dir> [--name <name>]` 注册一个带主文件夹的 project（不传名称时用文件夹名），以便 agent 有明确的工作目录。
+25. 作为 runner 主人，我希望 project 名称唯一（文件夹名撞名时报错并提示用 `--name` 改名），以便 agent 用名称选择时不产生歧义。
 26. 作为 runner 主人，我希望用 `project folder add <name> <dir>` 给 project 添加额外文件夹，以便 agent 能写入主目录之外的指定位置（例如共享配置目录）。
 27. 作为 runner 主人，我希望额外文件夹只扩大可写范围、不改变相对路径基准，以便行为可预测。
 28. 作为 runner 主人，我希望用 `project list` 查看所有 project 及其文件夹。
-29. 作为 runner 主人，我希望用 `project remove <name>` 删除 project。
+29. 作为 runner 主人，我希望用 `project remove <name>` 删除 project，用 `project rename <name> <new_name>` 改名。
 30. 作为 runner 主人，我希望修改 project 配置后 CLI 提示需重启 `run` 才生效，以便我不会误以为已经生效。
 31. 作为 runner 主人，我希望 project 配置和访问权限判断都在 runner 本地完成，以便即使 server 被攻破，攻击者也无法写入我未授权的目录。
 
@@ -140,7 +140,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 ### CLI
 
 - server：`serve`（监听地址、数据目录）、`key create [--name]`、`key list`、`key rm <key>`。
-- runner：`register <server_url> <key>`、`run`、`project add <name> <dir>`、`project folder add <name> <dir>`、`project list`、`project remove <name>`。
+- runner：`register <server_url> <key>`、`run`、`project add <dir> [--name <name>]`、`project folder add <name> <dir>`、`project list`、`project rename <name> <new_name>`、`project remove <name>`。
 - MCP 地址由注册时的 server_url 拼接 `/mcp/<key>` 得到。
 
 ## Testing Decisions

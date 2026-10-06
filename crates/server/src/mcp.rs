@@ -119,7 +119,7 @@ impl McpHandler {
         };
         if projects.is_empty() {
             return ToolOutput::text(
-                "No projects are registered on the runner. Add one on the runner machine with `telehand-runner project add <name> <dir>` and restart the runner.",
+                "No projects are registered on the runner. Add one on the runner machine with `telehand-runner project add <dir>` and restart the runner.",
             );
         }
         let current = state.current_project(&self.key);

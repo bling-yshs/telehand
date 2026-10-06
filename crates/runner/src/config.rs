@@ -56,21 +56,49 @@ impl RunnerConfig {
         self.projects.iter().find(|p| p.name == name)
     }
 
-    /// Add a project whose main folder is `dir`.
-    pub fn add_project(&mut self, name: &str, dir: &Path) -> anyhow::Result<&ProjectInfo> {
-        if name.trim().is_empty() {
-            bail!("project name must not be empty");
-        }
-        if self.project(name).is_some() {
-            bail!("project '{name}' already exists");
-        }
+    /// Add a project whose main folder is `dir`, named `name` or else after the folder.
+    pub fn add_project(&mut self, dir: &Path, name: Option<&str>) -> anyhow::Result<&ProjectInfo> {
         let main_folder = canonical_dir(dir)?;
+        let name = match name {
+            Some(name) => name.to_string(),
+            None => match Path::new(&main_folder).file_name() {
+                Some(folder) => folder.to_string_lossy().into_owned(),
+                None => bail!("cannot name a project after {main_folder}; pass --name"),
+            },
+        };
+        if let Err(e) = self.check_new_name(&name) {
+            bail!("{e}; pass --name to choose another name");
+        }
         self.projects.push(ProjectInfo {
-            name: name.to_string(),
+            name,
             main_folder,
             extra_folders: Vec::new(),
         });
         Ok(self.projects.last().expect("just pushed"))
+    }
+
+    pub fn rename_project(&mut self, name: &str, new_name: &str) -> anyhow::Result<&ProjectInfo> {
+        let Some(index) = self.projects.iter().position(|p| p.name == name) else {
+            bail!("project '{name}' does not exist");
+        };
+        self.check_new_name(new_name)?;
+        let project = &mut self.projects[index];
+        project.name = new_name.to_string();
+        Ok(project)
+    }
+
+    /// A name a new or renamed project may take: non-empty and unused.
+    fn check_new_name(&self, name: &str) -> anyhow::Result<()> {
+        if name.trim().is_empty() {
+            bail!("project name must not be empty");
+        }
+        if let Some(existing) = self.project(name) {
+            bail!(
+                "project '{name}' already exists ({})",
+                existing.main_folder
+            );
+        }
+        Ok(())
     }
 
     /// Add an extra folder to an existing project.
@@ -138,7 +166,7 @@ mod tests {
         assert!(!config.is_registered());
         config.server_url = "http://127.0.0.1:8080".into();
         config.key = "k".into();
-        config.add_project("demo", tmp.path()).unwrap();
+        config.add_project(tmp.path(), Some("demo")).unwrap();
         config.save(&path).unwrap();
 
         let loaded = RunnerConfig::load(&path).unwrap();
@@ -158,7 +186,7 @@ mod tests {
         std::fs::create_dir_all(&main).unwrap();
         std::fs::create_dir_all(&extra).unwrap();
         let mut config = RunnerConfig::default();
-        config.add_project("demo", &main).unwrap();
+        config.add_project(&main, Some("demo")).unwrap();
 
         let project = config.add_folder("demo", &extra).unwrap();
         assert_eq!(
@@ -178,12 +206,47 @@ mod tests {
     fn project_names_are_unique_and_folders_must_exist() {
         let tmp = tempfile::tempdir().unwrap();
         let mut config = RunnerConfig::default();
-        config.add_project("demo", tmp.path()).unwrap();
-        assert!(config.add_project("demo", tmp.path()).is_err());
+        config.add_project(tmp.path(), Some("demo")).unwrap();
+        assert!(config.add_project(tmp.path(), Some("demo")).is_err());
         assert!(
             config
-                .add_project("other", &tmp.path().join("missing"))
+                .add_project(&tmp.path().join("missing"), Some("other"))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn projects_are_named_after_their_folder_by_default() {
+        let tmp = tempfile::tempdir().unwrap();
+        let first = tmp.path().join("a").join("app");
+        let second = tmp.path().join("b").join("app");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        let mut config = RunnerConfig::default();
+
+        assert_eq!(config.add_project(&first, None).unwrap().name, "app");
+        let error = config.add_project(&second, None).unwrap_err().to_string();
+        assert!(
+            error.contains("project 'app' already exists") && error.contains("--name"),
+            "{error}"
+        );
+        assert_eq!(
+            config.add_project(&second, Some("app2")).unwrap().name,
+            "app2"
+        );
+    }
+
+    #[test]
+    fn projects_can_be_renamed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut config = RunnerConfig::default();
+        config.add_project(tmp.path(), Some("old")).unwrap();
+        config.add_project(tmp.path(), Some("taken")).unwrap();
+
+        assert_eq!(config.rename_project("old", "new").unwrap().name, "new");
+        assert!(config.project("old").is_none());
+        assert!(config.rename_project("new", "taken").is_err());
+        assert!(config.rename_project("new", " ").is_err());
+        assert!(config.rename_project("missing", "x").is_err());
     }
 }
