@@ -1,6 +1,8 @@
 //! Messages exchanged between runner and server over the WebSocket, plus the
 //! definitions of the file tools the runner executes.
 
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -13,6 +15,11 @@ pub const WS_PATH: &str = "/ws";
 pub const CLOSE_REPLACED: u16 = 4000;
 /// Close code sent to a runner whose key is unknown or has been removed.
 pub const CLOSE_INVALID_KEY: u16 = 4001;
+
+/// How often the server pings a runner.
+pub const PING_INTERVAL: Duration = Duration::from_secs(15);
+/// A connection that received nothing for this long is considered dead.
+pub const IDLE_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectInfo {
@@ -28,6 +35,10 @@ pub enum RunnerMessage {
     Hello {
         key: String,
         projects: Vec<ProjectInfo>,
+    },
+    /// Check that a key is valid without registering as the key's runner.
+    Probe {
+        key: String,
     },
     Response {
         id: u64,

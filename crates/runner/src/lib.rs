@@ -3,5 +3,5 @@
 mod client;
 pub mod config;
 
-pub use client::{RunExit, run};
+pub use client::{RunExit, check_key, run};
 pub use config::RunnerConfig;

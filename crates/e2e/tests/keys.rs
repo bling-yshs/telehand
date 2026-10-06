@@ -60,7 +60,12 @@ async fn key_commands_edit_the_file_when_no_server_runs() {
     let tmp = tempfile::tempdir().unwrap();
     let data_dir = tmp.path().join("data");
     let key = admin::create_key(&data_dir, None).await.unwrap();
-    assert!(admin::list_keys(&data_dir).await.unwrap().contains_key(&key));
+    assert!(
+        admin::list_keys(&data_dir)
+            .await
+            .unwrap()
+            .contains_key(&key)
+    );
     admin::remove_key(&data_dir, &key).await.unwrap();
     assert!(keys::load(&data_dir).unwrap().is_empty());
     assert!(admin::remove_key(&data_dir, &key).await.is_err());

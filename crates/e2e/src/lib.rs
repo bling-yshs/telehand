@@ -99,9 +99,19 @@ impl Env {
 
     /// Stop the server and start a new one (on a new port) with the same data dir.
     pub async fn restart_server(&mut self) {
+        self.restart_server_on("127.0.0.1:0".parse().unwrap()).await;
+    }
+
+    /// Stop the server and start a new one on the same port with the same data dir.
+    pub async fn restart_server_same_port(&mut self) {
+        let addr = self.server.as_ref().expect("server running").addr;
+        self.restart_server_on(addr).await;
+    }
+
+    async fn restart_server_on(&mut self, listen: std::net::SocketAddr) {
         self.stop_server().await;
         let server = telehand_server::start(ServeOptions {
-            listen: "127.0.0.1:0".parse().unwrap(),
+            listen,
             data_dir: self.data_dir.clone(),
         })
         .await

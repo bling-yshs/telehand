@@ -24,6 +24,7 @@ pub type McpService = StreamableHttpService<McpHandler, LocalSessionManager>;
 /// Something the connection task should send to its runner.
 pub enum Outbound {
     Message(ServerMessage),
+    Ping,
     Close(u16, String),
 }
 

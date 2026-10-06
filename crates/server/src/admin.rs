@@ -59,7 +59,9 @@ async fn send(data_dir: &Path, request: &Request) -> anyhow::Result<Option<Respo
     writer.write_all(line.as_bytes()).await?;
     let mut response = String::new();
     BufReader::new(reader).read_line(&mut response).await?;
-    Ok(Some(serde_json::from_str(&response).context("invalid admin response")?))
+    Ok(Some(
+        serde_json::from_str(&response).context("invalid admin response")?,
+    ))
 }
 
 fn unexpected(response: Response) -> anyhow::Error {

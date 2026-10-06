@@ -67,8 +67,9 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Register { server_url, key } => {
-            telehand_proto::ws_url(&server_url).map_err(anyhow::Error::msg)?;
-            config.server_url = server_url.trim_end_matches('/').to_string();
+            let server_url = server_url.trim_end_matches('/').to_string();
+            telehand_runner::check_key(&server_url, &key).await?;
+            config.server_url = server_url;
             config.key = key;
             config.save(&path)?;
             println!("Registered. MCP URL for agents:");

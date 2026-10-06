@@ -3,7 +3,7 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -14,7 +14,9 @@ use axum::{
     response::Response,
 };
 use futures_util::{SinkExt, StreamExt, stream::SplitStream};
-use telehand_proto::{CLOSE_INVALID_KEY, CLOSE_REPLACED, RunnerMessage, ServerMessage};
+use telehand_proto::{
+    CLOSE_INVALID_KEY, CLOSE_REPLACED, IDLE_TIMEOUT, PING_INTERVAL, RunnerMessage, ServerMessage,
+};
 use tokio::sync::mpsc;
 
 use crate::state::{AppState, Outbound, Pending, RunnerHandle};
@@ -51,7 +53,8 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
         _ => return,
     };
     let (key, projects) = match serde_json::from_str::<RunnerMessage>(&hello) {
-        Ok(RunnerMessage::Hello { key, projects }) => (key, projects),
+        Ok(RunnerMessage::Hello { key, projects }) => (key, Some(projects)),
+        Ok(RunnerMessage::Probe { key }) => (key, None),
         _ => {
             let _ = sink.send(close(1002, "expected hello")).await;
             return;
@@ -66,6 +69,14 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
             .await;
         return;
     }
+    let Some(projects) = projects else {
+        // A probe only checks the key.
+        let _ = sink
+            .send(Message::Text(ServerMessage::Welcome.to_json().into()))
+            .await;
+        let _ = sink.send(close(1000, "probe ok")).await;
+        return;
+    };
 
     let conn_id = state.next_id();
     let (tx, mut rx) = mpsc::unbounded_channel();
@@ -88,7 +99,6 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     }
     tracing::info!(key = %key, "runner connected");
     let _ = tx.send(Outbound::Message(ServerMessage::Welcome));
-    drop(tx);
 
     let writer = tokio::spawn(async move {
         while let Some(out) = rx.recv().await {
@@ -102,6 +112,11 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                         break;
                     }
                 }
+                Outbound::Ping => {
+                    if sink.send(Message::Ping(Default::default())).await.is_err() {
+                        break;
+                    }
+                }
                 Outbound::Close(code, reason) => {
                     let _ = sink.send(close(code, &reason)).await;
                     break;
@@ -110,11 +125,21 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
         }
     });
 
+    let mut ping = tokio::time::interval(PING_INTERVAL);
+    let mut last_seen = Instant::now();
     loop {
         tokio::select! {
             _ = state.shutdown.cancelled() => break,
+            _ = ping.tick() => {
+                if last_seen.elapsed() > IDLE_TIMEOUT {
+                    tracing::warn!(key = %key, "runner stopped responding");
+                    break;
+                }
+                let _ = tx.send(Outbound::Ping);
+            }
             msg = stream.next() => match msg {
                 Some(Ok(Message::Text(text))) => {
+                    last_seen = Instant::now();
                     match serde_json::from_str::<RunnerMessage>(&text) {
                         Ok(RunnerMessage::Response { id, output }) => {
                             if let Some(waiter) = pending.lock().unwrap().remove(&id) {
@@ -126,7 +151,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                     }
                 }
                 Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
-                Some(Ok(_)) => {}
+                Some(Ok(_)) => last_seen = Instant::now(),
             }
         }
     }
@@ -137,6 +162,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
             runners.remove(&key);
         }
     }
+    drop(tx);
     // Dropping the waiters makes in-flight calls fail instead of waiting for the timeout.
     pending.lock().unwrap().clear();
     writer.abort();
