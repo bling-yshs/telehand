@@ -4,10 +4,10 @@ use std::{io::ErrorKind, path::Path};
 
 use serde::Deserialize;
 use serde_json::Value;
-use telehand_proto::ToolOutput;
+use telehand_proto::{Content, ToolOutput};
 
 use crate::{
-    Project, path,
+    Project, image, path,
     truncate::{DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, TruncatedBy, format_size, truncate_head},
 };
 
@@ -53,9 +53,38 @@ pub async fn run(project: &Project, args: Value) -> ToolOutput {
             Err(e) => return ToolOutput::error(access_error(&e, &path)),
         },
     };
+    if let Some(mime_type) = image::detect_mime_type(&bytes) {
+        return read_image(bytes, mime_type).await;
+    }
     match read_text(&bytes, &args) {
         Ok(text) => ToolOutput::text(text),
         Err(message) => ToolOutput::error(message),
+    }
+}
+
+async fn read_image(bytes: Vec<u8>, mime_type: &'static str) -> ToolOutput {
+    let processed = tokio::task::spawn_blocking(move || image::process(&bytes, mime_type))
+        .await
+        .unwrap_or_else(|e| Err(format!("[Image omitted: {e}]")));
+    match processed {
+        Ok(processed) => {
+            let mut note = format!("Read image file [{}]", processed.mime_type);
+            for hint in &processed.hints {
+                note.push('\n');
+                note.push_str(hint);
+            }
+            ToolOutput {
+                content: vec![
+                    Content::Text { text: note },
+                    Content::Image {
+                        data: processed.data,
+                        mime_type: processed.mime_type,
+                    },
+                ],
+                is_error: false,
+            }
+        }
+        Err(message) => ToolOutput::text(format!("Read image file [{mime_type}]\n{message}")),
     }
 }
 
@@ -130,7 +159,6 @@ mod tests {
     use std::path::PathBuf;
 
     use serde_json::json;
-    use telehand_proto::Content;
 
     use super::*;
 

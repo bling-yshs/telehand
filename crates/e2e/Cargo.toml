@@ -10,6 +10,8 @@ telehand-proto.workspace = true
 telehand-server.workspace = true
 telehand-runner.workspace = true
 anyhow.workspace = true
+base64.workspace = true
+image.workspace = true
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
 reqwest = { version = "0.13", default-features = false }
 serde_json.workspace = true

@@ -13,6 +13,8 @@ telehand-server = { path = "crates/server" }
 telehand-runner = { path = "crates/runner" }
 
 anyhow = "1"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "6"

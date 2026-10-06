@@ -7,6 +7,7 @@ use telehand_proto::{ToolOutput, tool_defs};
 
 mod edit;
 mod edit_diff;
+mod image;
 mod path;
 mod queue;
 mod read;
