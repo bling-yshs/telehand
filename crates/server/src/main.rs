@@ -18,7 +18,7 @@ enum Command {
     /// Run the server.
     Serve {
         /// Address to listen on.
-        #[arg(long, default_value = "0.0.0.0:8080")]
+        #[arg(long, default_value = "0.0.0.0:20250")]
         listen: SocketAddr,
     },
     /// Manage keys.

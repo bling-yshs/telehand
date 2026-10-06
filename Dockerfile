@@ -18,6 +18,6 @@ FROM debian:trixie-slim
 COPY --from=builder /src/target/release/telehand-server /usr/local/bin/telehand-server
 ENV TELEHAND_DATA_DIR=/data
 VOLUME /data
-EXPOSE 8080
+EXPOSE 20250
 ENTRYPOINT ["telehand-server"]
-CMD ["serve", "--listen", "0.0.0.0:8080"]
+CMD ["serve", "--listen", "0.0.0.0:20250"]
