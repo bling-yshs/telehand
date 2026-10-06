@@ -150,7 +150,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
   1. **MCP 接缝（主）**：同一测试进程内启动 server（临时数据目录、随机端口）和 runner，用 MCP 客户端经 `/mcp/<key>` 发起真实调用。覆盖：未选择 project 时文件工具报错；list/select/current_project；相对/绝对路径 read；范围外 read 成功、范围外 write/edit 被拒、软链逃逸被拒；edit 多处替换与模糊匹配的端到端效果；读取 png 得到 image 内容；runner 断开后所有工具立即 "runner offline"；同 key 第二个 runner 接入后旧 runner 收到"已被替代"；`key rm` 后 runner 收到"已移除"且 MCP 返回 404；server 运行中经管理通道创建的 key 立即可用且不被延迟写覆盖；当前 project 选择在 server 重启后保留。
   2. **文件工具模块接缝（补充）**：针对 pi 语义中组合数量大的细节，直接调用文件工具模块的公开接口：截断边界（行数/字节先到、单行超 50KB、limit 提前停止）、offset 越界、CRLF/BOM 保留、模糊匹配各类归一、唯一性/重叠/空文本/无变化错误文案、宽松参数解析、路径规范化、写范围判断（含软链、`..`、新文件祖先目录）。
 - **Prior art**：仓库目前为空，无既有测试；以 pi 源码中的行为与错误文案作为期望值来源。
-- **执行环境**：本地无 Rust 环境，所有测试在 GitHub Actions 上运行，push 到 `dev/` 前缀分支时触发（fmt 检查、clippy、全部测试）。
+- **执行环境**：本地无 Rust 环境，所有测试在 GitHub Actions 上运行，push 到 `dev/` 前缀分支时触发（clippy、全部测试；不检查格式）。
 
 ## Out of Scope
 

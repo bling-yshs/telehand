@@ -97,3 +97,45 @@ async fn edit_applies_multiple_and_fuzzy_replacements() {
 
     runner.stop().await;
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn symlinks_cannot_escape_the_project() {
+    let env = Env::start().await;
+    let demo = env.dir("demo");
+    let outside = env.dir("outside");
+    std::fs::write(outside.join("secret.txt"), "secret").unwrap();
+    std::os::unix::fs::symlink(&outside, demo.join("link-dir")).unwrap();
+    std::os::unix::fs::symlink(outside.join("secret.txt"), demo.join("link-file")).unwrap();
+
+    let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
+    let client = env.client().await;
+    client.wait_online().await;
+    client.ok("select_project", json!({"name": "demo"})).await;
+
+    for (tool, args) in [
+        ("write", json!({"path": "link-file", "content": "x"})),
+        ("write", json!({"path": "link-dir/new.txt", "content": "x"})),
+        (
+            "edit",
+            json!({"path": "link-file", "edits": [{"oldText": "secret", "newText": "x"}]}),
+        ),
+        (
+            "edit",
+            json!({"path": "link-dir/secret.txt", "edits": [{"oldText": "secret", "newText": "x"}]}),
+        ),
+    ] {
+        let denied = client.err(tool, args.clone()).await;
+        assert!(denied.starts_with("Permission denied"), "{tool} {args}: {denied}");
+    }
+    assert_eq!(
+        std::fs::read_to_string(outside.join("secret.txt")).unwrap(),
+        "secret"
+    );
+    assert!(!outside.join("new.txt").exists());
+
+    // Reading through a symlink is allowed.
+    assert_eq!(client.ok("read", json!({"path": "link-file"})).await, "secret");
+
+    runner.stop().await;
+}

@@ -37,6 +37,9 @@ pub struct RunnerHandle {
     pub pending: Pending,
 }
 
+#[derive(Debug)]
+pub struct UnknownKey;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum CallError {
     Offline,
@@ -107,6 +110,22 @@ impl AppState {
         true
     }
 
+    /// Register the runner connection for `key`, returning the one it replaces.
+    /// `Err` if the key does not exist. The key is checked under the runners
+    /// lock, so a concurrent `remove_key` either rejects this runner or
+    /// disconnects it afterwards.
+    pub fn attach_runner(
+        &self,
+        key: &str,
+        handle: RunnerHandle,
+    ) -> Result<Option<RunnerHandle>, UnknownKey> {
+        let mut runners = self.runners.lock().unwrap();
+        if !self.key_exists(key) {
+            return Err(UnknownKey);
+        }
+        Ok(runners.insert(key.to_string(), handle))
+    }
+
     /// The projects reported by the runner for `key`, or `None` if it is offline.
     pub fn runner_projects(&self, key: &str) -> Option<Vec<ProjectInfo>> {
         self.runners
@@ -118,10 +137,11 @@ impl AppState {
 
     /// The MCP service for `key`, created on first use. `None` if the key is unknown.
     pub fn mcp_service(self: &Arc<Self>, key: &str) -> Option<McpService> {
+        // Checked under the services lock, like `attach_runner`.
+        let mut services = self.mcp_services.lock().unwrap();
         if !self.key_exists(key) {
             return None;
         }
-        let mut services = self.mcp_services.lock().unwrap();
         let service = services.entry(key.to_string()).or_insert_with(|| {
             let handler = McpHandler::new(key.to_string(), Arc::downgrade(self));
             StreamableHttpService::new(

@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 use crate::keys::{self, Keys};
 
 const DEBOUNCE: Duration = Duration::from_millis(100);
+const RETRY: Duration = Duration::from_secs(1);
 
 pub struct KeyStore {
     data_dir: PathBuf,
@@ -75,7 +76,12 @@ impl KeyStore {
                 }
             }
             if let Err(e) = self.flush() {
-                tracing::error!(error = %format!("{e:#}"), "failed to save keys");
+                tracing::error!(error = %format!("{e:#}"), "failed to save keys; retrying");
+                // Try again later even if nothing else changes.
+                tokio::select! {
+                    _ = tokio::time::sleep(RETRY) => self.changed.notify_one(),
+                    _ = shutdown.cancelled() => {}
+                }
             }
             if shutdown.is_cancelled() {
                 break;
@@ -133,5 +139,30 @@ mod tests {
         shutdown.cancel();
         flusher.await.unwrap();
         assert_eq!(stored(dir.path()).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn failed_writes_are_retried() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("data");
+        // A file where the data directory should be makes every write fail.
+        std::fs::write(&dir, "").unwrap();
+        let store = Arc::new(KeyStore::new(dir.clone(), Keys::new()));
+        let shutdown = CancellationToken::new();
+        let flusher = tokio::spawn(store.clone().run_flusher(shutdown.clone()));
+
+        store.update(|keys| {
+            let (key, entry) = keys::new_entry(None);
+            keys.insert(key, entry);
+        });
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        std::fs::remove_file(&dir).unwrap();
+
+        // No further change: the retry alone must write the keys.
+        tokio::time::sleep(RETRY + Duration::from_millis(500)).await;
+        assert_eq!(stored(&dir).len(), 1);
+
+        shutdown.cancel();
+        flusher.await.unwrap();
     }
 }

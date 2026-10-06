@@ -81,15 +81,19 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     let conn_id = state.next_id();
     let (tx, mut rx) = mpsc::unbounded_channel();
     let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
-    let previous = state.runners.lock().unwrap().insert(
-        key.clone(),
-        RunnerHandle {
-            conn_id,
-            tx: tx.clone(),
-            projects,
-            pending: pending.clone(),
-        },
-    );
+    let handle = RunnerHandle {
+        conn_id,
+        tx: tx.clone(),
+        projects,
+        pending: pending.clone(),
+    };
+    let Ok(previous) = state.attach_runner(&key, handle) else {
+        // The key was removed during the handshake.
+        let _ = sink
+            .send(close(CLOSE_INVALID_KEY, "key has been removed"))
+            .await;
+        return;
+    };
     if let Some(previous) = previous {
         tracing::warn!(key = %key, "a new runner connected with this key; replacing the old one");
         let _ = previous.tx.send(Outbound::Close(

@@ -230,9 +230,9 @@ fn dimension_note(resized: &Resized) -> Option<String> {
     }
     let (ow, oh) = resized.original;
     let (w, h) = resized.size;
-    let scale = f64::from(ow) / f64::from(w);
+    let scale = crate::truncate::to_fixed(f64::from(ow) / f64::from(w), 2);
     Some(format!(
-        "[Image: original {ow}x{oh}, displayed at {w}x{h}. Multiply coordinates by {scale:.2} to map to original image.]"
+        "[Image: original {ow}x{oh}, displayed at {w}x{h}. Multiply coordinates by {scale} to map to original image.]"
     ))
 }
 

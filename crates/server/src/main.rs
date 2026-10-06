@@ -6,6 +6,9 @@ use telehand_server::{ServeOptions, admin};
 #[derive(Parser)]
 #[command(name = "telehand-server", version, about = "Telehand server")]
 struct Cli {
+    /// Directory holding keys.json and admin.sock.
+    #[arg(long, global = true, env = "TELEHAND_DATA_DIR", default_value = "./data")]
+    data_dir: PathBuf,
     #[command(subcommand)]
     command: Command,
 }
@@ -17,8 +20,6 @@ enum Command {
         /// Address to listen on.
         #[arg(long, default_value = "0.0.0.0:8080")]
         listen: SocketAddr,
-        #[arg(long, env = "TELEHAND_DATA_DIR", default_value = "./data")]
-        data_dir: PathBuf,
     },
     /// Manage keys.
     Key {
@@ -34,19 +35,12 @@ enum KeyCommand {
         /// A note to tell keys apart.
         #[arg(long)]
         name: Option<String>,
-        #[arg(long, env = "TELEHAND_DATA_DIR", default_value = "./data")]
-        data_dir: PathBuf,
     },
     /// List keys.
-    List {
-        #[arg(long, env = "TELEHAND_DATA_DIR", default_value = "./data")]
-        data_dir: PathBuf,
-    },
+    List,
     /// Remove a key; its runner is disconnected and its MCP URL stops working.
     Rm {
         key: String,
-        #[arg(long, env = "TELEHAND_DATA_DIR", default_value = "./data")]
-        data_dir: PathBuf,
     },
 }
 
@@ -58,8 +52,9 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    match Cli::parse().command {
-        Command::Serve { listen, data_dir } => {
+    let Cli { data_dir, command } = Cli::parse();
+    match command {
+        Command::Serve { listen } => {
             let server = telehand_server::start(ServeOptions { listen, data_dir }).await?;
             tracing::info!(addr = %server.addr, "listening");
             let token = server.shutdown_token();
@@ -70,12 +65,12 @@ async fn main() -> anyhow::Result<()> {
             server.wait().await
         }
         Command::Key { command } => match command {
-            KeyCommand::Create { name, data_dir } => {
+            KeyCommand::Create { name } => {
                 let key = admin::create_key(&data_dir, name).await?;
                 println!("{key}");
                 Ok(())
             }
-            KeyCommand::List { data_dir } => {
+            KeyCommand::List => {
                 for (key, entry) in admin::list_keys(&data_dir).await? {
                     println!(
                         "{key}\t{}\tcreated_at={}",
@@ -85,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
                 }
                 Ok(())
             }
-            KeyCommand::Rm { key, data_dir } => {
+            KeyCommand::Rm { key } => {
                 admin::remove_key(&data_dir, &key).await?;
                 println!("Removed key {key}");
                 Ok(())

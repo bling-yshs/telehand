@@ -7,7 +7,7 @@
 **Status:** done
 
 - [x] Rust workspace 含两个二进制（server、runner）及共享的协议模块与文件工具模块；runner 不依赖 server 的 HTTP/MCP 依赖
-- [x] CI 在 push 到 `dev/` 前缀分支时运行 fmt 检查、clippy、全部测试，且通过
+- [x] CI 在 push 到 `dev/` 前缀分支时运行 clippy、全部测试（不检查格式），且通过
 - [x] `serve` 可指定监听地址与数据目录；单端口同时提供 runner 的 WebSocket 接入与 `/mcp/<key>`；远程 Host 可访问（放开 MCP SDK 默认的 loopback 限制）
 - [x] `key create [--name]` 生成 UUID key 并写入状态文件（本 ticket 直接写文件即可）
 - [x] runner `register <server_url> <key>` 保存连接信息到本地配置并打印 `<server_url>/mcp/<key>`

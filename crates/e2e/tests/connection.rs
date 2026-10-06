@@ -4,9 +4,15 @@ use telehand_e2e::{Env, json};
 use telehand_runner::RunExit;
 
 #[tokio::test]
-async fn every_tool_fails_fast_while_the_runner_is_offline() {
+async fn every_tool_fails_fast_after_the_runner_disconnects() {
     let env = Env::start().await;
+    let demo = env.dir("demo");
+    let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
     let client = env.client().await;
+    client.wait_online().await;
+    client.ok("select_project", json!({"name": "demo"})).await;
+    runner.stop().await;
+    client.wait_offline().await;
 
     let tools = client.tool_names().await;
     assert_eq!(tools.len(), 6, "{tools:?}");

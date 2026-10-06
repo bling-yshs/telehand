@@ -23,12 +23,13 @@ pub async fn run(project: &Project, args: Value) -> ToolOutput {
         Err(message) => return ToolOutput::error(message),
     };
     let _guard = queue::lock(&real).await;
-    if let Some(dir) = target.parent()
+    // Write to the checked real path, so a symlink in `target` cannot redirect the write.
+    if let Some(dir) = real.parent()
         && let Err(e) = tokio::fs::create_dir_all(dir).await
     {
         return ToolOutput::error(format!("{e}, mkdir '{}'", dir.display()));
     }
-    if let Err(e) = tokio::fs::write(&target, args.content.as_bytes()).await {
+    if let Err(e) = tokio::fs::write(&real, args.content.as_bytes()).await {
         return ToolOutput::error(format!("{e}, open '{}'", target.display()));
     }
     ToolOutput::text(format!("Successfully wrote to {}", args.path))

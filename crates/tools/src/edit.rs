@@ -125,23 +125,28 @@ pub async fn run(project: &Project, args: Value) -> ToolOutput {
     };
     let _guard = queue::lock(&real).await;
 
-    match tokio::fs::metadata(&target).await {
-        Err(e) => {
-            return ToolOutput::error(format!(
-                "Could not edit file: {path}. Error code: {}.",
-                error_code(e.kind())
-            ));
-        }
-        Ok(meta) if meta.permissions().readonly() => {
-            return ToolOutput::error(format!("Could not edit file: {path}. Error code: EACCES."));
-        }
-        Ok(meta) if meta.is_dir() => {
+    // pi checks access(R_OK | W_OK) first; opening for read and write asks the same question.
+    let access = match tokio::fs::metadata(&real).await {
+        Ok(meta) if meta.is_dir() => Ok(()),
+        Ok(_) => tokio::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&real)
+            .await
+            .map(drop),
+        Err(e) => Err(e),
+    };
+    if let Err(e) = access {
+        return ToolOutput::error(format!(
+            "Could not edit file: {path}. Error code: {}.",
+            error_code(e.kind())
+        ));
+    }
+    let bytes = match tokio::fs::read(&real).await {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == ErrorKind::IsADirectory => {
             return ToolOutput::error("EISDIR: illegal operation on a directory, read");
         }
-        Ok(_) => {}
-    }
-    let bytes = match tokio::fs::read(&target).await {
-        Ok(bytes) => bytes,
         Err(e) => {
             return ToolOutput::error(format!(
                 "Could not edit file: {path}. Error code: {}.",
@@ -166,7 +171,7 @@ pub async fn run(project: &Project, args: Value) -> ToolOutput {
         "{bom}{}",
         restore_line_endings(&new_content, original_ending)
     );
-    if let Err(e) = tokio::fs::write(&target, final_content).await {
+    if let Err(e) = tokio::fs::write(&real, final_content).await {
         return ToolOutput::error(format!("{e}, open '{}'", target.display()));
     }
     ToolOutput::text(format!(
@@ -285,6 +290,50 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(tmp.path().join("outside.txt")).unwrap(),
             "abc"
+        );
+    }
+
+    #[tokio::test]
+    async fn access_errors_use_pi_codes() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = project(dir.path());
+        let edit = json!([{"oldText": "a", "newText": "b"}]);
+
+        let out = run(&p, json!({"path": "missing.txt", "edits": edit})).await;
+        assert_eq!(
+            text(&out),
+            "Could not edit file: missing.txt. Error code: ENOENT."
+        );
+
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        let out = run(&p, json!({"path": "sub", "edits": edit})).await;
+        assert_eq!(
+            text(&out),
+            "EISDIR: illegal operation on a directory, read"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unwritable_files_are_eacces() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("locked.txt");
+        std::fs::write(&file, "a").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444)).unwrap();
+        if std::fs::OpenOptions::new().write(true).open(&file).is_ok() {
+            return; // running as root: permission bits are not enforced
+        }
+        let out = run(
+            &project(dir.path()),
+            json!({"path": "locked.txt", "edits": [{"oldText": "a", "newText": "b"}]}),
+        )
+        .await;
+        assert!(out.is_error);
+        assert_eq!(
+            text(&out),
+            "Could not edit file: locked.txt. Error code: EACCES."
         );
     }
 }
