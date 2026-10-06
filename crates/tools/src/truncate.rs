@@ -209,7 +209,7 @@ mod tests {
         assert_eq!(t.truncated_by, Some(TruncatedBy::Lines));
         assert_eq!(t.output_lines, 3);
 
-        let t = truncate_tail(&content, 100, 7);
+        let t = truncate_tail(&content, 100, 5);
         assert_eq!(t.content, "9\n10");
         assert_eq!(t.truncated_by, Some(TruncatedBy::Bytes));
 
