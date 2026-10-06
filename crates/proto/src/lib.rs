@@ -122,8 +122,14 @@ mod tests {
 
     #[test]
     fn urls_are_derived_from_server_url() {
-        assert_eq!(mcp_url("https://h.example/", "k"), "https://h.example/mcp/k");
-        assert_eq!(ws_url("http://127.0.0.1:8080").unwrap(), "ws://127.0.0.1:8080/ws");
+        assert_eq!(
+            mcp_url("https://h.example/", "k"),
+            "https://h.example/mcp/k"
+        );
+        assert_eq!(
+            ws_url("http://127.0.0.1:8080").unwrap(),
+            "ws://127.0.0.1:8080/ws"
+        );
         assert_eq!(ws_url("https://h.example/").unwrap(), "wss://h.example/ws");
         assert!(ws_url("h.example").is_err());
     }

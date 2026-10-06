@@ -40,8 +40,7 @@ const RESTART_HINT: &str = "Restart `telehand-runner run` for the change to take
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
     // TLS for wss:// server URLs.
@@ -58,7 +57,10 @@ async fn main() -> anyhow::Result<()> {
             config.key = key;
             config.save(&path)?;
             println!("Registered. MCP URL for agents:");
-            println!("{}", telehand_proto::mcp_url(&config.server_url, &config.key));
+            println!(
+                "{}",
+                telehand_proto::mcp_url(&config.server_url, &config.key)
+            );
         }
         Command::Run => {
             if !config.is_registered() {
@@ -77,7 +79,9 @@ async fn main() -> anyhow::Result<()> {
             match exit {
                 RunExit::Shutdown => {}
                 RunExit::Replaced => {
-                    bail!("another runner connected with the same key; this runner has been replaced")
+                    bail!(
+                        "another runner connected with the same key; this runner has been replaced"
+                    )
                 }
                 RunExit::KeyRejected => bail!("the server rejected the key (unknown or removed)"),
             }

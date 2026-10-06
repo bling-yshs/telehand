@@ -15,7 +15,10 @@ async fn agent_selects_a_project_and_reads_files() {
 
     let tools = client.tool_names().await;
     for name in ["list_project", "select_project", "current_project", "read"] {
-        assert!(tools.iter().any(|t| t == name), "missing tool {name}: {tools:?}");
+        assert!(
+            tools.iter().any(|t| t == name),
+            "missing tool {name}: {tools:?}"
+        );
     }
 
     let list = client.ok("list_project", json!({})).await;
@@ -49,7 +52,10 @@ async fn agent_selects_a_project_and_reads_files() {
 #[tokio::test]
 async fn unknown_key_is_not_found() {
     let env = Env::start().await;
-    let url = format!("{}/mcp/00000000-0000-0000-0000-000000000000", env.server_url);
+    let url = format!(
+        "{}/mcp/00000000-0000-0000-0000-000000000000",
+        env.server_url
+    );
     let response = reqwest::Client::new()
         .post(url)
         .header("content-type", "application/json")

@@ -59,7 +59,10 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     };
     if !state.key_exists(&key) {
         let _ = sink
-            .send(close(CLOSE_INVALID_KEY, "key is invalid or has been removed"))
+            .send(close(
+                CLOSE_INVALID_KEY,
+                "key is invalid or has been removed",
+            ))
             .await;
         return;
     }
@@ -91,7 +94,11 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
         while let Some(out) = rx.recv().await {
             match out {
                 Outbound::Message(msg) => {
-                    if sink.send(Message::Text(msg.to_json().into())).await.is_err() {
+                    if sink
+                        .send(Message::Text(msg.to_json().into()))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }

@@ -65,9 +65,11 @@ fn tools() -> Vec<Tool> {
             schema(json!({"type": "object", "properties": {}})),
         ),
     ];
-    tools.extend(tool_defs::file_tools().into_iter().map(|def| {
-        Tool::new(def.name, def.description, schema(def.input_schema))
-    }));
+    tools.extend(
+        tool_defs::file_tools()
+            .into_iter()
+            .map(|def| Tool::new(def.name, def.description, schema(def.input_schema))),
+    );
     tools
 }
 
