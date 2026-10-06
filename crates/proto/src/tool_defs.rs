@@ -1,4 +1,4 @@
-//! Names, descriptions and input schemas of the file tools executed on the
+//! Names, descriptions and input schemas of the tools executed on the
 //! runner. Descriptions follow the pi coding agent.
 
 use serde_json::{Value, json};
@@ -12,6 +12,7 @@ pub struct ToolDef {
 pub const READ: &str = "read";
 pub const WRITE: &str = "write";
 pub const EDIT: &str = "edit";
+pub const BASH: &str = "bash";
 
 const READ_DESCRIPTION: &str = "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.";
 
@@ -19,7 +20,10 @@ const WRITE_DESCRIPTION: &str = "Write content to a file. Creates the file if it
 
 const EDIT_DESCRIPTION: &str = "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.";
 
-pub fn file_tools() -> Vec<ToolDef> {
+const BASH_DESCRIPTION: &str = "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.";
+
+/// The tools that run on the runner, in the context of the current project.
+pub fn runner_tools() -> Vec<ToolDef> {
     vec![
         read_def(),
         ToolDef {
@@ -70,6 +74,24 @@ pub fn file_tools() -> Vec<ToolDef> {
                     }
                 },
                 "required": ["path", "edits"]
+            }),
+        },
+        ToolDef {
+            name: BASH,
+            description: BASH_DESCRIPTION,
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Shell command to execute"
+                    },
+                    "timeout": {
+                        "type": "number",
+                        "description": "Timeout in seconds (optional, no default timeout)"
+                    }
+                },
+                "required": ["command"]
             }),
         },
     ]

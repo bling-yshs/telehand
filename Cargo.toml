@@ -19,6 +19,7 @@ axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "6"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+libc = "0.2"
 rmcp = { version = "3.5", default-features = false }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde = { version = "1", features = ["derive"] }

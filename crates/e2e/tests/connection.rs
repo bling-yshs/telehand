@@ -15,7 +15,7 @@ async fn every_tool_fails_fast_after_the_runner_disconnects() {
     client.wait_offline().await;
 
     let tools = client.tool_names().await;
-    assert_eq!(tools.len(), 6, "{tools:?}");
+    assert_eq!(tools.len(), 7, "{tools:?}");
 
     for (tool, args) in [
         ("list_project", json!({})),
@@ -27,6 +27,7 @@ async fn every_tool_fails_fast_after_the_runner_disconnects() {
             "edit",
             json!({"path": "a.txt", "edits": [{"oldText": "a", "newText": "b"}]}),
         ),
+        ("bash", json!({"command": "echo hi"})),
     ] {
         let started = Instant::now();
         let error = client.err(tool, args).await;

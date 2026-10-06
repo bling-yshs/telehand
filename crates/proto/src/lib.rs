@@ -56,6 +56,10 @@ pub enum ServerMessage {
         tool: String,
         args: Value,
     },
+    /// The server no longer waits for request `id`; stop it (e.g. kill its command).
+    Cancel {
+        id: u64,
+    },
 }
 
 /// Tool result content, serialized in the same shape as MCP content blocks.

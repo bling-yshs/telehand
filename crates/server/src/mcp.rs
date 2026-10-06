@@ -1,6 +1,6 @@
 //! The MCP server exposed to agents at `/mcp/{key}`.
 
-use std::sync::Weak;
+use std::{sync::Weak, time::Duration};
 
 use rmcp::{
     ErrorData, RoleServer, ServerHandler,
@@ -13,8 +13,12 @@ use rmcp::{
 };
 use serde_json::{Value, json};
 use telehand_proto::{Content, ProjectInfo, ToolOutput, tool_defs};
+use tokio_util::sync::CancellationToken;
 
-use crate::state::{AppState, CallError};
+use crate::state::{AppState, CallError, TOOL_TIMEOUT};
+
+/// Time for the runner to report back after a command's own timeout.
+const BASH_REPORT_GRACE: Duration = Duration::from_secs(30);
 
 pub const LIST_PROJECT: &str = "list_project";
 pub const SELECT_PROJECT: &str = "select_project";
@@ -45,12 +49,12 @@ fn tools() -> Vec<Tool> {
     let mut tools = vec![
         Tool::new(
             LIST_PROJECT,
-            "List the projects registered on the runner, with their main folder and extra folders, and mark the current project. File tools (read, write, edit) operate on the current project: relative paths resolve against its main folder, and write/edit may only modify files inside its folders.",
+            "List the projects registered on the runner, with their main folder and extra folders, and mark the current project. The read, write, edit and bash tools operate on the current project: relative paths resolve against its main folder, write/edit may only modify files inside its folders, and bash runs commands in its main folder.",
             schema(json!({"type": "object", "properties": {}})),
         ),
         Tool::new(
             SELECT_PROJECT,
-            "Select the current project by name. All file tools operate on the current project until another one is selected. The selection is shared by every agent using this MCP URL.",
+            "Select the current project by name. read, write, edit and bash operate on the current project until another one is selected. The selection is shared by every agent using this MCP URL.",
             schema(json!({
                 "type": "object",
                 "properties": {
@@ -61,12 +65,12 @@ fn tools() -> Vec<Tool> {
         ),
         Tool::new(
             CURRENT_PROJECT,
-            "Show the current project: its name, main folder (base for relative paths) and extra folders.",
+            "Show the current project: its name, main folder (base for relative paths and working directory of bash) and extra folders.",
             schema(json!({"type": "object", "properties": {}})),
         ),
     ];
     tools.extend(
-        tool_defs::file_tools()
+        tool_defs::runner_tools()
             .into_iter()
             .map(|def| Tool::new(def.name, def.description, schema(def.input_schema))),
     );
@@ -98,6 +102,19 @@ fn describe(project: &ProjectInfo) -> String {
         ));
     }
     text
+}
+
+/// How long to wait for the runner. Commands run as long as their own
+/// `timeout` (with time to report back), or without limit when none is given,
+/// as in pi.
+fn response_timeout(tool: &str, args: &Value) -> Option<Duration> {
+    if tool != tool_defs::BASH {
+        return Some(TOOL_TIMEOUT);
+    }
+    let seconds = args.get("timeout").and_then(Value::as_f64)?;
+    Duration::try_from_secs_f64(seconds)
+        .ok()?
+        .checked_add(BASH_REPORT_GRACE)
 }
 
 fn no_project_selected() -> ToolOutput {
@@ -174,7 +191,13 @@ impl McpHandler {
         }
     }
 
-    async fn file_tool(&self, state: &AppState, tool: &str, args: Value) -> ToolOutput {
+    async fn runner_tool(
+        &self,
+        state: &AppState,
+        tool: &str,
+        args: Value,
+        cancel: &CancellationToken,
+    ) -> ToolOutput {
         let Some(projects) = state.runner_projects(&self.key) else {
             return ToolOutput::error(RUNNER_OFFLINE);
         };
@@ -184,15 +207,20 @@ impl McpHandler {
         if !projects.iter().any(|p| p.name == current) {
             return project_missing(&current);
         }
-        match state.call_runner(&self.key, &current, tool, args).await {
+        let timeout = response_timeout(tool, &args);
+        match state
+            .call_runner(&self.key, &current, tool, args, timeout, cancel)
+            .await
+        {
             Ok(output) => output,
             Err(CallError::Offline) | Err(CallError::Disconnected) => {
                 ToolOutput::error(RUNNER_OFFLINE)
             }
-            Err(CallError::Timeout) => ToolOutput::error(format!(
+            Err(CallError::Timeout(limit)) => ToolOutput::error(format!(
                 "Timed out after {} seconds waiting for the runner to respond.",
-                crate::state::TOOL_TIMEOUT.as_secs()
+                limit.as_secs()
             )),
+            Err(CallError::Cancelled) => ToolOutput::error("Cancelled"),
         }
     }
 }
@@ -214,7 +242,7 @@ impl ServerHandler for McpHandler {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let Some(state) = self.state.upgrade() else {
             return Err(ErrorData::internal_error("server is shutting down", None));
@@ -224,8 +252,8 @@ impl ServerHandler for McpHandler {
             LIST_PROJECT => self.list_project(&state),
             SELECT_PROJECT => self.select_project(&state, &args),
             CURRENT_PROJECT => self.current_project(&state),
-            name if tool_defs::file_tools().iter().any(|def| def.name == name) => {
-                self.file_tool(&state, name, args).await
+            name if tool_defs::runner_tools().iter().any(|def| def.name == name) => {
+                self.runner_tool(&state, name, args, &context.ct).await
             }
             name => ToolOutput::error(format!("Unknown tool: {name}")),
         };

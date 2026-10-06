@@ -125,9 +125,107 @@ pub fn truncate_head(content: &str, max_lines: usize, max_bytes: usize) -> Trunc
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TailTruncation {
+    pub content: String,
+    pub truncated_by: Option<TruncatedBy>,
+    pub output_lines: usize,
+    pub output_bytes: usize,
+    /// The last line alone exceeds the byte limit; `content` is its end.
+    pub last_line_partial: bool,
+}
+
+/// Keep the last lines of `content` within `max_lines` and `max_bytes`
+/// (pi's `truncateTail`, for command output).
+pub fn truncate_tail(content: &str, max_lines: usize, max_bytes: usize) -> TailTruncation {
+    let lines = split_lines_for_counting(content);
+    if lines.len() <= max_lines && content.len() <= max_bytes {
+        return TailTruncation {
+            content: content.to_string(),
+            truncated_by: None,
+            output_lines: lines.len(),
+            output_bytes: content.len(),
+            last_line_partial: false,
+        };
+    }
+
+    let mut output: Vec<&str> = Vec::new();
+    let mut output_bytes = 0;
+    let mut truncated_by = TruncatedBy::Lines;
+    let mut last_line_partial = false;
+    for line in lines.iter().rev() {
+        if output.len() >= max_lines {
+            break;
+        }
+        let line_bytes = line.len() + usize::from(!output.is_empty());
+        if output_bytes + line_bytes > max_bytes {
+            truncated_by = TruncatedBy::Bytes;
+            if output.is_empty() {
+                let end = tail_within_bytes(line, max_bytes);
+                output.push(end);
+                output_bytes = end.len();
+                last_line_partial = true;
+            }
+            break;
+        }
+        output.push(line);
+        output_bytes += line_bytes;
+    }
+    if output.len() >= max_lines && output_bytes <= max_bytes {
+        truncated_by = TruncatedBy::Lines;
+    }
+    output.reverse();
+    let content = output.join("\n");
+    TailTruncation {
+        output_bytes: content.len(),
+        content,
+        truncated_by: Some(truncated_by),
+        output_lines: output.len(),
+        last_line_partial,
+    }
+}
+
+/// The longest suffix of `s` within `max_bytes`, starting at a character boundary.
+fn tail_within_bytes(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut start = s.len() - max_bytes;
+    while !s.is_char_boundary(start) {
+        start += 1;
+    }
+    &s[start..]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tail_keeps_the_last_lines() {
+        let content: String = (1..=10).map(|i| format!("{i}\n")).collect();
+        let t = truncate_tail(&content, 3, 1000);
+        assert_eq!(t.content, "8\n9\n10");
+        assert_eq!(t.truncated_by, Some(TruncatedBy::Lines));
+        assert_eq!(t.output_lines, 3);
+
+        let t = truncate_tail(&content, 100, 7);
+        assert_eq!(t.content, "9\n10");
+        assert_eq!(t.truncated_by, Some(TruncatedBy::Bytes));
+
+        let t = truncate_tail("a\n", 5, 5);
+        assert_eq!(t.content, "a\n");
+        assert_eq!(t.truncated_by, None);
+    }
+
+    #[test]
+    fn a_long_last_line_keeps_its_end() {
+        let t = truncate_tail("first\nxxxxé123", 10, 4);
+        assert_eq!(t.content, "123");
+        assert!(t.last_line_partial);
+        assert_eq!(t.output_bytes, 3);
+        assert_eq!(t.truncated_by, Some(TruncatedBy::Bytes));
+    }
 
     #[test]
     fn sizes_are_formatted_like_pi() {

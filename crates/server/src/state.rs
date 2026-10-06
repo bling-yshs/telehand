@@ -44,7 +44,9 @@ pub struct UnknownKey;
 pub enum CallError {
     Offline,
     Disconnected,
-    Timeout,
+    Timeout(Duration),
+    /// The agent cancelled the request.
+    Cancelled,
 }
 
 pub struct AppState {
@@ -155,17 +157,21 @@ impl AppState {
         Some(service.clone())
     }
 
-    /// Send a tool call to the runner for `key` and wait for its output.
+    /// Send a tool call to the runner for `key` and wait for its output, at
+    /// most `timeout` (`None`: until it answers or disconnects). On timeout or
+    /// when `cancel` fires, the runner is told to stop the call.
     pub async fn call_runner(
         &self,
         key: &str,
         project: &str,
         tool: &str,
         args: Value,
+        timeout: Option<Duration>,
+        cancel: &CancellationToken,
     ) -> Result<ToolOutput, CallError> {
         let id = self.next_id();
         let (tx, rx) = oneshot::channel();
-        let pending = {
+        let (pending, runner_tx) = {
             let runners = self.runners.lock().unwrap();
             let runner = runners.get(key).ok_or(CallError::Offline)?;
             runner.pending.lock().unwrap().insert(id, tx);
@@ -179,14 +185,30 @@ impl AppState {
                 runner.pending.lock().unwrap().remove(&id);
                 return Err(CallError::Offline);
             }
-            runner.pending.clone()
+            (runner.pending.clone(), runner.tx.clone())
         };
-        match tokio::time::timeout(TOOL_TIMEOUT, rx).await {
-            Ok(Ok(output)) => Ok(output),
-            Ok(Err(_)) => Err(CallError::Disconnected),
-            Err(_) => {
-                pending.lock().unwrap().remove(&id);
-                Err(CallError::Timeout)
+        let abandon = || {
+            pending.lock().unwrap().remove(&id);
+            let _ = runner_tx.send(Outbound::Message(ServerMessage::Cancel { id }));
+        };
+        let answer = async {
+            match timeout {
+                Some(limit) => tokio::time::timeout(limit, rx).await.map_err(|_| limit),
+                None => Ok(rx.await),
+            }
+        };
+        tokio::select! {
+            answer = answer => match answer {
+                Ok(Ok(output)) => Ok(output),
+                Ok(Err(_)) => Err(CallError::Disconnected),
+                Err(limit) => {
+                    abandon();
+                    Err(CallError::Timeout(limit))
+                }
+            },
+            _ = cancel.cancelled() => {
+                abandon();
+                Err(CallError::Cancelled)
             }
         }
     }
