@@ -1,0 +1,13 @@
+[package]
+name = "telehand-tools"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+telehand-proto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

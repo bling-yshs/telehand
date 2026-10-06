@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: ["dev/**"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: never
+  RUST_BACKTRACE: "1"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy, rustfmt
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        if: ${{ !cancelled() }}
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          cargo test --workspace --no-fail-fast 2>&1 | tee test.log
+      - name: Annotate test failures
+        if: ${{ failure() }}
+        run: python3 .github/scripts/annotate_tests.py test.log

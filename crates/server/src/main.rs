@@ -1,0 +1,85 @@
+use std::{net::SocketAddr, path::PathBuf};
+
+use clap::{Parser, Subcommand};
+use telehand_server::{ServeOptions, keys};
+
+#[derive(Parser)]
+#[command(name = "telehand-server", version, about = "Telehand server")]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Run the server.
+    Serve {
+        /// Address to listen on.
+        #[arg(long, default_value = "0.0.0.0:8080")]
+        listen: SocketAddr,
+        #[arg(long, env = "TELEHAND_DATA_DIR", default_value = "./data")]
+        data_dir: PathBuf,
+    },
+    /// Manage keys.
+    Key {
+        #[command(subcommand)]
+        command: KeyCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum KeyCommand {
+    /// Create a key.
+    Create {
+        /// A note to tell keys apart.
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long, env = "TELEHAND_DATA_DIR", default_value = "./data")]
+        data_dir: PathBuf,
+    },
+    /// List keys.
+    List {
+        #[arg(long, env = "TELEHAND_DATA_DIR", default_value = "./data")]
+        data_dir: PathBuf,
+    },
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info".into()),
+        )
+        .init();
+
+    match Cli::parse().command {
+        Command::Serve { listen, data_dir } => {
+            let server = telehand_server::start(ServeOptions { listen, data_dir }).await?;
+            tracing::info!(addr = %server.addr, "listening");
+            let token = server.shutdown_token();
+            tokio::spawn(async move {
+                let _ = tokio::signal::ctrl_c().await;
+                token.cancel();
+            });
+            server.wait().await
+        }
+        Command::Key { command } => match command {
+            KeyCommand::Create { name, data_dir } => {
+                let key = keys::create_in_file(&data_dir, name)?;
+                println!("{key}");
+                Ok(())
+            }
+            KeyCommand::List { data_dir } => {
+                for (key, entry) in keys::load(&data_dir)? {
+                    println!(
+                        "{key}\t{}\tcreated_at={}",
+                        entry.name.as_deref().unwrap_or("-"),
+                        entry.created_at
+                    );
+                }
+                Ok(())
+            }
+        },
+    }
+}

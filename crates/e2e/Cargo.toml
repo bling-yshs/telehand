@@ -1,0 +1,18 @@
+[package]
+name = "telehand-e2e"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+# End-to-end tests: server + runner in one process, driven by a real MCP client.
+[dependencies]
+telehand-proto.workspace = true
+telehand-server.workspace = true
+telehand-runner.workspace = true
+anyhow.workspace = true
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
+reqwest = { version = "0.13", default-features = false }
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
