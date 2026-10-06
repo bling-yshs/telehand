@@ -123,7 +123,9 @@ async fn main() -> anyhow::Result<()> {
             }
             ProjectCommand::List => {
                 if config.projects.is_empty() {
-                    println!("No projects. Add one with `telehand-runner project add <name> <dir>`.");
+                    println!(
+                        "No projects. Add one with `telehand-runner project add <name> <dir>`."
+                    );
                 }
                 for project in &config.projects {
                     println!("{}", project.name);
