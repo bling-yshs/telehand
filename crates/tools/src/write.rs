@@ -87,7 +87,11 @@ mod tests {
         )
         .await;
         assert!(out.is_error);
-        assert!(text(&out).starts_with("Permission denied"), "{}", text(&out));
+        assert!(
+            text(&out).starts_with("Permission denied"),
+            "{}",
+            text(&out)
+        );
         assert!(!tmp.path().join("escape.txt").exists());
     }
 
@@ -99,9 +103,9 @@ mod tests {
         let writes = (0..8).map(|i| {
             let p = p.clone();
             let content = format!("{i}{big}");
-            tokio::spawn(async move {
-                run(&p, json!({"path": "same.txt", "content": content})).await
-            })
+            tokio::spawn(
+                async move { run(&p, json!({"path": "same.txt", "content": content})).await },
+            )
         });
         for write in writes {
             assert!(!write.await.unwrap().is_error);

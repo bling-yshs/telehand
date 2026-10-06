@@ -135,7 +135,10 @@ fn apply_replacements_preserving_unchanged_lines(
     let original_lines = split_lines_with_endings(original);
     let base_lines = line_spans(base);
     if original_lines.len() != base_lines.len() {
-        return Err("Cannot preserve unchanged lines because the base content has a different line count.".to_string());
+        return Err(
+            "Cannot preserve unchanged lines because the base content has a different line count."
+                .to_string(),
+        );
     }
 
     struct Group<'a> {
@@ -350,13 +353,12 @@ mod tests {
 
     #[test]
     fn exact_single_and_multiple_edits() {
-        assert_eq!(apply("one two three", &[edit("two", "2")]).unwrap(), "one 2 three");
         assert_eq!(
-            apply(
-                "a\nb\nc\nd\n",
-                &[edit("d", "D"), edit("a", "A")]
-            )
-            .unwrap(),
+            apply("one two three", &[edit("two", "2")]).unwrap(),
+            "one 2 three"
+        );
+        assert_eq!(
+            apply("a\nb\nc\nd\n", &[edit("d", "D"), edit("a", "A")]).unwrap(),
             "A\nb\nc\nD\n"
         );
     }
@@ -372,7 +374,8 @@ mod tests {
 
     #[test]
     fn fuzzy_match_rewrites_only_touched_lines() {
-        let content = "keep \u{201C}smart\u{201D}   \nlet s = \u{2018}a\u{2019};   \ntail\u{2014}x  \n";
+        let content =
+            "keep \u{201C}smart\u{201D}   \nlet s = \u{2018}a\u{2019};   \ntail\u{2014}x  \n";
         let result = apply(content, &[edit("let s = 'a';", "let s = 'b';")]).unwrap();
         assert_eq!(
             result,

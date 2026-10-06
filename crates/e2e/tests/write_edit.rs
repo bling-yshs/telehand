@@ -13,7 +13,10 @@ async fn write_is_limited_to_project_folders() {
     client.ok("select_project", json!({"name": "demo"})).await;
 
     let wrote = client
-        .ok("write", json!({"path": "src/new.rs", "content": "fn new() {}\n"}))
+        .ok(
+            "write",
+            json!({"path": "src/new.rs", "content": "fn new() {}\n"}),
+        )
         .await;
     assert_eq!(wrote, "Successfully wrote to src/new.rs");
     assert_eq!(

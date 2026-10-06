@@ -133,9 +133,7 @@ pub async fn run(project: &Project, args: Value) -> ToolOutput {
             ));
         }
         Ok(meta) if meta.permissions().readonly() => {
-            return ToolOutput::error(format!(
-                "Could not edit file: {path}. Error code: EACCES."
-            ));
+            return ToolOutput::error(format!("Could not edit file: {path}. Error code: EACCES."));
         }
         Ok(meta) if meta.is_dir() => {
             return ToolOutput::error("EISDIR: illegal operation on a directory, read");
@@ -269,14 +267,21 @@ mod tests {
             json!({"path": "nope.txt", "edits": [{"oldText": "a", "newText": "b"}]}),
         )
         .await;
-        assert_eq!(text(&out), "Could not edit file: nope.txt. Error code: ENOENT.");
+        assert_eq!(
+            text(&out),
+            "Could not edit file: nope.txt. Error code: ENOENT."
+        );
 
         let out = run(
             &p,
             json!({"path": "../outside.txt", "edits": [{"oldText": "a", "newText": "b"}]}),
         )
         .await;
-        assert!(text(&out).starts_with("Permission denied"), "{}", text(&out));
+        assert!(
+            text(&out).starts_with("Permission denied"),
+            "{}",
+            text(&out)
+        );
         assert_eq!(
             std::fs::read_to_string(tmp.path().join("outside.txt")).unwrap(),
             "abc"
