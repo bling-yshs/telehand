@@ -98,7 +98,8 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 
 62. 作为开发者，我希望以后加入 `bash` 工具时不需要修改 runner 与 server 之间的消息协议。
 63. 作为 agent，我希望用 `bash` 在当前 project 的主文件夹里执行命令（语义照搬 pi：输出取最后 2000 行 / 50KB，截断时完整输出存入 runner 上的临时文件；非零退出码为错误；可选超时，超时或取消时杀掉整个进程树）。
-64. 作为 runner 主人，我希望在 Windows 上 `bash` 依次使用 `TELEHAND_GIT_BASH_PATH`、`C:\Program Files\Git\bin\bash.exe`、PATH 中的 `bash.exe`；macOS/Linux 照 pi 使用 `/bin/bash`、PATH 中的 `bash`、最后 `sh`（`TELEHAND_GIT_BASH_PATH` 在所有平台优先）。
+64. 作为 agent，我希望 `bash` 最多同步等待 `wait` 秒（默认 50）：命令在此之前结束则直接返回结果，否则命令继续在 runner 上运行并返回任务 ID 与最新输出；我用 `bash_result(task_id, wait)` 继续等待并取回结果（结果取回后任务即清除），用 `bash_kill(task_id)` 杀掉它。这样单次 MCP 调用总是很短，不受客户端请求超时限制。
+65. 作为 runner 主人，我希望在 Windows 上 `bash` 依次使用 `TELEHAND_GIT_BASH_PATH`、`C:\Program Files\Git\bin\bash.exe`、PATH 中的 `bash.exe`；macOS/Linux 照 pi 使用 `/bin/bash`、PATH 中的 `bash`、最后 `sh`（`TELEHAND_GIT_BASH_PATH` 在所有平台优先）。
 
 ## Implementation Decisions
 
@@ -122,15 +123,16 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 - runner 主动建立 WebSocket；普通断线指数退避重连。
 - 同一 key 新连接到来时踢掉旧连接（"已被替代" close code）；收到该 code 或"key 已移除" code 的 runner 打印提示并退出，不重连。
 - server 在 runner 断线时清空该 key 缓存的 project 列表（当前 project 选择仍保留在状态文件中）。
-- runner 离线时所有 7 个 MCP 工具立即返回 "runner offline"。
-- 工具调用超时约 60 秒；`bash` 例外：带 `timeout` 时等待 `timeout` + 30 秒，不带时不限时（同 pi）。
-- server 放弃等待某个请求时（超时、agent 取消 MCP 请求）向 runner 发送取消消息；runner 取消该请求（`bash` 杀掉进程树）。runner 断线时取消其所有进行中的请求。
+- runner 离线时所有 9 个 MCP 工具立即返回 "runner offline"。
+- 工具调用超时约 60 秒；`bash` 与 `bash_result` 为 `wait` + 30 秒。
+- server 放弃等待某个请求时（超时、agent 取消 MCP 请求）向 runner 发送取消消息；runner 取消该请求：`bash` 在同步等待期间被取消时杀掉进程树，`bash_result` 被取消只是停止等待。runner 断线不取消任何请求，命令继续运行，重连后可用 `bash_result` 取回结果；runner 重启则任务记录丢失。
+- `bash_result` / `bash_kill` 不需要选中 project。
 
 ### MCP
 
 - 使用官方 Rust MCP SDK 的 Streamable HTTP 服务端。SDK 不支持按路径区分租户，因此每个 key 懒创建一个独立的 MCP 服务实例，由一个按 key 分发的 HTTP 处理器转交；会话空间按 key 隔离。
 - SDK 默认只允许 loopback Host，需要放开以支持远程访问。
-- 暴露 7 个工具：`read`、`write`、`edit`、`bash`、`list_project`、`select_project`、`current_project`。不提供 ls/find/grep。
+- 暴露 9 个工具：`read`、`write`、`edit`、`bash`、`bash_result`、`bash_kill`、`list_project`、`select_project`、`current_project`。不提供 ls/find/grep。
 - 当前 project 挂在 key 上（全局），不依赖 MCP 会话（新版 MCP 规范已移除会话）。
 
 ### project 与路径

@@ -163,11 +163,10 @@ async fn session(
         let _ = sink.close().await;
     });
 
-    // Requests still running, so the server can cancel them. When this session
-    // ends (including when its future is dropped), all of them are cancelled.
+    // Requests still running, so the server can cancel them. A dropped
+    // connection cancels nothing: commands keep running, and the agent can
+    // collect their results with bash_result after the runner reconnects.
     let in_flight: InFlight = Arc::new(Mutex::new(HashMap::new()));
-    let session_cancel = CancellationToken::new();
-    let _cancel_on_end = session_cancel.clone().drop_guard();
 
     let mut idle_check = tokio::time::interval(Duration::from_secs(5));
     let mut last_seen = Instant::now();
@@ -191,18 +190,12 @@ async fn session(
                                 main_folder: PathBuf::from(&p.main_folder),
                                 extra_folders: p.extra_folders.iter().map(PathBuf::from).collect(),
                             });
-                            let cancel = session_cancel.child_token();
+                            let cancel = CancellationToken::new();
                             in_flight.lock().unwrap().insert(id, cancel.clone());
                             let in_flight = in_flight.clone();
                             tokio::spawn(async move {
-                                let output = match project {
-                                    Some(project) => {
-                                        telehand_tools::execute(&project, &tool, args, &cancel).await
-                                    }
-                                    None => telehand_proto::ToolOutput::error(
-                                        "The selected project does not exist on the runner.",
-                                    ),
-                                };
+                                let output =
+                                    telehand_tools::execute(project.as_ref(), &tool, args, &cancel).await;
                                 in_flight.lock().unwrap().remove(&id);
                                 let _ = out_tx.send(RunnerMessage::Response { id, output });
                             });

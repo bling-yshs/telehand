@@ -27,14 +27,24 @@ pub struct Project {
     pub extra_folders: Vec<PathBuf>,
 }
 
-/// Run `tool` with `args` in the context of `project`. Cancelling `cancel`
-/// stops a running command.
+/// Run `tool` with `args` in the context of `project` (`None`: the selected
+/// project is not on this runner). Cancelling `cancel` means the caller gave
+/// up: a command still waited on is killed.
 pub async fn execute(
-    project: &Project,
+    project: Option<&Project>,
     tool: &str,
     args: Value,
     cancel: &CancellationToken,
 ) -> ToolOutput {
+    // Commands that already run do not need the project.
+    match tool {
+        tool_defs::BASH_RESULT => return bash::result(args, cancel).await,
+        tool_defs::BASH_KILL => return bash::kill(args).await,
+        _ => {}
+    }
+    let Some(project) = project else {
+        return ToolOutput::error("The selected project does not exist on the runner.");
+    };
     match tool {
         tool_defs::READ => read::run(project, args).await,
         tool_defs::WRITE => write::run(project, args).await,

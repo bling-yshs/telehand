@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::state::{AppState, CallError, TOOL_TIMEOUT};
 
-/// Time for the runner to report back after a command's own timeout.
+/// Time for the runner to answer after `wait` has passed.
 const BASH_REPORT_GRACE: Duration = Duration::from_secs(30);
 
 pub const LIST_PROJECT: &str = "list_project";
@@ -104,17 +104,25 @@ fn describe(project: &ProjectInfo) -> String {
     text
 }
 
-/// How long to wait for the runner. Commands run as long as their own
-/// `timeout` (with time to report back), or without limit when none is given,
-/// as in pi.
-fn response_timeout(tool: &str, args: &Value) -> Option<Duration> {
-    if tool != tool_defs::BASH {
-        return Some(TOOL_TIMEOUT);
+/// How long to wait for the runner. `bash` and `bash_result` answer after at
+/// most `wait` seconds (a command still running by then continues as a task).
+fn response_timeout(tool: &str, args: &Value) -> Duration {
+    if tool != tool_defs::BASH && tool != tool_defs::BASH_RESULT {
+        return TOOL_TIMEOUT;
     }
-    let seconds = args.get("timeout").and_then(Value::as_f64)?;
-    Duration::try_from_secs_f64(seconds)
-        .ok()?
-        .checked_add(BASH_REPORT_GRACE)
+    let wait = args
+        .get("wait")
+        .and_then(Value::as_f64)
+        .unwrap_or(tool_defs::BASH_DEFAULT_WAIT_SECONDS);
+    Duration::try_from_secs_f64(wait)
+        .ok()
+        .and_then(|wait| wait.checked_add(BASH_REPORT_GRACE))
+        .unwrap_or(TOOL_TIMEOUT)
+}
+
+/// Tools about commands that already run, which need no selected project.
+fn is_task_tool(tool: &str) -> bool {
+    tool == tool_defs::BASH_RESULT || tool == tool_defs::BASH_KILL
 }
 
 fn no_project_selected() -> ToolOutput {
@@ -201,15 +209,19 @@ impl McpHandler {
         let Some(projects) = state.runner_projects(&self.key) else {
             return ToolOutput::error(RUNNER_OFFLINE);
         };
-        let Some(current) = state.current_project(&self.key) else {
-            return no_project_selected();
-        };
-        if !projects.iter().any(|p| p.name == current) {
-            return project_missing(&current);
+        let current = state.current_project(&self.key);
+        if !is_task_tool(tool) {
+            let Some(current) = &current else {
+                return no_project_selected();
+            };
+            if !projects.iter().any(|p| &p.name == current) {
+                return project_missing(current);
+            }
         }
         let timeout = response_timeout(tool, &args);
+        let project = current.unwrap_or_default();
         match state
-            .call_runner(&self.key, &current, tool, args, timeout, cancel)
+            .call_runner(&self.key, &project, tool, args, Some(timeout), cancel)
             .await
         {
             Ok(output) => output,

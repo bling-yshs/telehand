@@ -13,6 +13,12 @@ pub const READ: &str = "read";
 pub const WRITE: &str = "write";
 pub const EDIT: &str = "edit";
 pub const BASH: &str = "bash";
+pub const BASH_RESULT: &str = "bash_result";
+pub const BASH_KILL: &str = "bash_kill";
+
+/// How long `bash` and `bash_result` wait for a command by default before
+/// returning while it keeps running.
+pub const BASH_DEFAULT_WAIT_SECONDS: f64 = 50.0;
 
 const READ_DESCRIPTION: &str = "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.";
 
@@ -20,7 +26,11 @@ const WRITE_DESCRIPTION: &str = "Write content to a file. Creates the file if it
 
 const EDIT_DESCRIPTION: &str = "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.";
 
-const BASH_DESCRIPTION: &str = "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.";
+const BASH_DESCRIPTION: &str = "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds. If the command is still running after `wait` seconds (default 50), it keeps running and a task ID is returned with its latest output; call bash_result with the task ID to get the result, or bash_kill to stop it.";
+
+const BASH_RESULT_DESCRIPTION: &str = "Wait for a bash command that was still running when bash returned. Waits up to `wait` seconds (default 50): returns the command's result if it finished, otherwise its latest output; call again to keep waiting.";
+
+const BASH_KILL_DESCRIPTION: &str = "Stop a running bash command by its task ID, killing it and every process it started, and return its output.";
 
 /// The tools that run on the runner, in the context of the current project.
 pub fn runner_tools() -> Vec<ToolDef> {
@@ -89,9 +99,45 @@ pub fn runner_tools() -> Vec<ToolDef> {
                     "timeout": {
                         "type": "number",
                         "description": "Timeout in seconds (optional, no default timeout)"
+                    },
+                    "wait": {
+                        "type": "number",
+                        "description": "Seconds to wait for the command to finish before returning a task ID (optional, default 50). The command keeps running either way."
                     }
                 },
                 "required": ["command"]
+            }),
+        },
+        ToolDef {
+            name: BASH_RESULT,
+            description: BASH_RESULT_DESCRIPTION,
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Task ID returned by bash"
+                    },
+                    "wait": {
+                        "type": "number",
+                        "description": "Seconds to wait for the command to finish (optional, default 50)"
+                    }
+                },
+                "required": ["task_id"]
+            }),
+        },
+        ToolDef {
+            name: BASH_KILL,
+            description: BASH_KILL_DESCRIPTION,
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "Task ID returned by bash"
+                    }
+                },
+                "required": ["task_id"]
             }),
         },
     ]

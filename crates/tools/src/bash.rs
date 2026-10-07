@@ -2,22 +2,32 @@
 //! main folder and returns stdout and stderr combined. Only the last 2000 lines
 //! / 50KB are returned; when output is cut, the full output is saved to a temp
 //! file whose path is shown.
+//!
+//! Unlike pi, a command still running after `wait` seconds (default 50) keeps
+//! running as a task: `bash` returns its task ID, `bash_result` waits for its
+//! result and `bash_kill` stops it. Every call stays short, whatever the
+//! agent's request timeout, and a command survives the runner reconnecting.
 
 use std::{
+    collections::HashMap,
     fs::File,
     io::Write,
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
+    sync::{
+        Arc, LazyLock, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
 use serde::Deserialize;
 use serde_json::Value;
-use telehand_proto::ToolOutput;
+use telehand_proto::{ToolOutput, tool_defs::BASH_DEFAULT_WAIT_SECONDS};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     process::Command,
-    sync::mpsc,
+    sync::{mpsc, watch},
     task::JoinHandle,
     time::Instant,
 };
@@ -37,12 +47,41 @@ const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
 const ROLLING_BYTES: usize = DEFAULT_MAX_BYTES * 2;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+/// How much of the latest output a still-running task shows.
+const RECENT_LINES: usize = 20;
+const RECENT_BYTES: usize = 4 * 1024;
+/// How long `bash_kill` waits for a killed command to end.
+const KILL_WAIT: Duration = Duration::from_secs(10);
+
+/// Commands that outlived the call that started them, until their result is taken.
+static TASKS: LazyLock<Mutex<HashMap<String, Arc<Task>>>> = LazyLock::new(Default::default);
+static NEXT_TASK: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Deserialize)]
 struct Args {
     command: String,
     #[serde(default)]
     timeout: Option<f64>,
+    #[serde(default)]
+    wait: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct TaskArgs {
+    task_id: String,
+    #[serde(default)]
+    wait: Option<f64>,
+}
+
+/// A running (or finished, not yet reported) command.
+struct Task {
+    id: String,
+    started: Instant,
+    /// The `timeout` argument, for the timeout message.
+    timeout: Option<f64>,
+    output: Mutex<Output>,
+    kill: CancellationToken,
+    ending: watch::Receiver<Option<Ending>>,
 }
 
 pub async fn run(project: &Project, args: Value, cancel: &CancellationToken) -> ToolOutput {
@@ -52,6 +91,10 @@ pub async fn run(project: &Project, args: Value, cancel: &CancellationToken) -> 
     };
     let timeout = match args.timeout.map(resolve_timeout).transpose() {
         Ok(timeout) => timeout,
+        Err(message) => return ToolOutput::error(message),
+    };
+    let wait = match resolve_wait(args.wait) {
+        Ok(wait) => wait,
         Err(message) => return ToolOutput::error(message),
     };
     if cancel.is_cancelled() {
@@ -69,24 +112,193 @@ pub async fn run(project: &Project, args: Value, cancel: &CancellationToken) -> 
         ));
     }
 
-    let (mut output, ending) = match execute(&shell, &args.command, cwd, timeout, cancel).await {
-        Ok(finished) => finished,
+    let task = start(shell, args.command, cwd.clone(), args.timeout, timeout);
+    // Cancelling the call (the agent gave up on it) kills the command.
+    match wait_for(&task, wait, cancel, true).await {
+        Some(ending) => report(&task, &ending),
+        None => {
+            TASKS
+                .lock()
+                .unwrap()
+                .insert(task.id.clone(), task.clone());
+            ToolOutput::text(still_running(&task))
+        }
+    }
+}
+
+/// `bash_result`: wait for a task and report its result once it has ended.
+pub async fn result(args: Value, cancel: &CancellationToken) -> ToolOutput {
+    let args: TaskArgs = match serde_json::from_value(args) {
+        Ok(args) => args,
+        Err(e) => return ToolOutput::error(format!("Invalid arguments for bash_result: {e}")),
+    };
+    let wait = match resolve_wait(args.wait) {
+        Ok(wait) => wait,
         Err(message) => return ToolOutput::error(message),
     };
+    let Some(task) = find_task(&args.task_id) else {
+        return unknown_task(&args.task_id);
+    };
+    // Cancelling this call only stops waiting.
+    match wait_for(&task, wait, cancel, false).await {
+        Some(ending) => {
+            TASKS.lock().unwrap().remove(&task.id);
+            report(&task, &ending)
+        }
+        None => ToolOutput::text(still_running(&task)),
+    }
+}
+
+/// `bash_kill`: kill a task and report its output.
+pub async fn kill(args: Value) -> ToolOutput {
+    let args: TaskArgs = match serde_json::from_value(args) {
+        Ok(args) => args,
+        Err(e) => return ToolOutput::error(format!("Invalid arguments for bash_kill: {e}")),
+    };
+    let Some(task) = find_task(&args.task_id) else {
+        return unknown_task(&args.task_id);
+    };
+    task.kill.cancel();
+    let Some(ending) = wait_for(&task, KILL_WAIT, &CancellationToken::new(), false).await else {
+        return ToolOutput::error(format!(
+            "Task {} did not stop within {} seconds.",
+            task.id,
+            KILL_WAIT.as_secs()
+        ));
+    };
+    TASKS.lock().unwrap().remove(&task.id);
+    let (text, is_error) = outcome(&task, &ending);
     match ending {
-        Ending::Aborted => ToolOutput::error(append_status(&output.format(""), "Command aborted")),
-        Ending::TimedOut => ToolOutput::error(append_status(
-            &output.format(""),
-            &format!(
-                "Command timed out after {} seconds",
-                args.timeout.unwrap_or_default()
+        Ending::Aborted => ToolOutput::text(format!("Killed task {}.\n\n{text}", task.id)),
+        _ => ToolOutput {
+            is_error,
+            ..ToolOutput::text(text)
+        },
+    }
+}
+
+fn find_task(id: &str) -> Option<Arc<Task>> {
+    TASKS.lock().unwrap().get(id).cloned()
+}
+
+fn unknown_task(id: &str) -> ToolOutput {
+    ToolOutput::error(format!(
+        "Unknown task ID: {id}. Its result may already have been returned, or the runner was restarted."
+    ))
+}
+
+fn resolve_wait(seconds: Option<f64>) -> Result<Duration, String> {
+    let seconds = seconds.unwrap_or(BASH_DEFAULT_WAIT_SECONDS);
+    if !seconds.is_finite() || seconds < 0.0 {
+        return Err("Invalid wait: must be a non-negative number of seconds".to_string());
+    }
+    Duration::try_from_secs_f64(seconds).map_err(|e| format!("Invalid wait: {e}"))
+}
+
+/// Start the command in the background.
+fn start(
+    shell: ShellConfig,
+    command: String,
+    cwd: PathBuf,
+    timeout_seconds: Option<f64>,
+    timeout: Option<Duration>,
+) -> Arc<Task> {
+    let (ending_tx, ending) = watch::channel(None);
+    let task = Arc::new(Task {
+        id: format!("bash-{}", NEXT_TASK.fetch_add(1, Ordering::Relaxed)),
+        started: Instant::now(),
+        timeout: timeout_seconds,
+        output: Mutex::new(Output::new()),
+        kill: CancellationToken::new(),
+        ending,
+    });
+    let job = task.clone();
+    tokio::spawn(async move {
+        let ending = execute(&shell, &command, &cwd, timeout, &job.kill, &job.output)
+            .await
+            .unwrap_or_else(Ending::Failed);
+        let _ = ending_tx.send(Some(ending));
+    });
+    task
+}
+
+/// Wait up to `wait` for the task to end. When `cancel` fires, kill the task
+/// and wait for it if `kill_on_cancel`, else stop waiting.
+async fn wait_for(
+    task: &Task,
+    wait: Duration,
+    cancel: &CancellationToken,
+    kill_on_cancel: bool,
+) -> Option<Ending> {
+    let mut ending = task.ending.clone();
+    let ended = async move {
+        match ending.wait_for(Option::is_some).await {
+            Ok(ending) => (*ending).clone().expect("waited for an ending"),
+            Err(_) => Ending::Failed("The command's task stopped unexpectedly.".to_string()),
+        }
+    };
+    tokio::pin!(ended);
+    tokio::select! {
+        ending = &mut ended => Some(ending),
+        _ = tokio::time::sleep(wait) => None,
+        _ = cancel.cancelled() => {
+            if kill_on_cancel {
+                task.kill.cancel();
+                Some(ended.await)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn still_running(task: &Task) -> String {
+    let recent = task.output.lock().unwrap().recent();
+    let latest = if recent.is_empty() {
+        "No output yet.".to_string()
+    } else {
+        format!("Latest output:\n{recent}")
+    };
+    format!(
+        "Command is still running after {} seconds. Task ID: {}\nCall bash_result with this task ID to wait for its result, or bash_kill to stop it.\n\n{latest}",
+        task.started.elapsed().as_secs(),
+        task.id
+    )
+}
+
+fn report(task: &Task, ending: &Ending) -> ToolOutput {
+    let (text, is_error) = outcome(task, ending);
+    if is_error {
+        ToolOutput::error(text)
+    } else {
+        ToolOutput::text(text)
+    }
+}
+
+/// The result text of an ended command (as pi words it) and whether it failed.
+fn outcome(task: &Task, ending: &Ending) -> (String, bool) {
+    let mut output = task.output.lock().unwrap();
+    match ending {
+        Ending::Aborted => (append_status(&output.format(""), "Command aborted"), true),
+        Ending::TimedOut => (
+            append_status(
+                &output.format(""),
+                &format!(
+                    "Command timed out after {} seconds",
+                    task.timeout.unwrap_or_default()
+                ),
             ),
-        )),
-        Ending::Exited(0) => ToolOutput::text(output.format("(no output)")),
-        Ending::Exited(code) => ToolOutput::error(append_status(
-            &output.format("(no output)"),
-            &format!("Command exited with code {code}"),
-        )),
+            true,
+        ),
+        Ending::Exited(0) => (output.format("(no output)"), false),
+        Ending::Exited(code) => (
+            append_status(
+                &output.format("(no output)"),
+                &format!("Command exited with code {code}"),
+            ),
+            true,
+        ),
+        Ending::Failed(message) => (message.clone(), true),
     }
 }
 
@@ -110,19 +322,24 @@ fn append_status(text: &str, status: &str) -> String {
     }
 }
 
+#[derive(Debug, Clone)]
 enum Ending {
     Exited(i32),
     TimedOut,
     Aborted,
+    /// The command could not be run.
+    Failed(String),
 }
 
+/// Run the command, collecting its output, until it exits, times out or `kill` fires.
 async fn execute(
     shell: &ShellConfig,
     command: &str,
     cwd: &Path,
     timeout: Option<Duration>,
-    cancel: &CancellationToken,
-) -> Result<(Output, Ending), String> {
+    kill: &CancellationToken,
+    output: &Mutex<Output>,
+) -> Result<Ending, String> {
     let mut cmd = Command::new(&shell.shell);
     cmd.args(&shell.args);
     if !shell.command_via_stdin {
@@ -156,7 +373,6 @@ async fn execute(
         spawn_reader(child.stdout.take(), tx.clone()),
         spawn_reader(child.stderr.take(), tx),
     ];
-    let mut output = Output::new();
 
     let far_future = Instant::now() + Duration::from_secs(86400 * 365 * 30);
     let deadline = tokio::time::sleep_until(timeout.map_or(far_future, |t| Instant::now() + t));
@@ -166,12 +382,12 @@ async fn execute(
     let status = loop {
         tokio::select! {
             status = child.wait() => break status,
-            Some(chunk) = rx.recv() => output.append(&chunk),
+            Some(chunk) = rx.recv() => output.lock().unwrap().append(&chunk),
             _ = &mut deadline, if timeout.is_some() && !timed_out => {
                 timed_out = true;
                 kill_tree(pid);
             }
-            _ = cancel.cancelled(), if !aborted => {
+            _ = kill.cancelled(), if !aborted => {
                 aborted = true;
                 kill_tree(pid);
             }
@@ -179,7 +395,7 @@ async fn execute(
     };
     // Read what is left, without waiting on pipes that background processes keep open.
     while let Ok(Some(chunk)) = tokio::time::timeout(EXIT_STDIO_GRACE, rx.recv()).await {
-        output.append(&chunk);
+        output.lock().unwrap().append(&chunk);
     }
     for reader in readers {
         reader.abort();
@@ -193,7 +409,7 @@ async fn execute(
         let status = status.map_err(|e| format!("Failed to wait for the shell: {e}"))?;
         Ending::Exited(exit_code(status))
     };
-    Ok((output, ending))
+    Ok(ending)
 }
 
 fn spawn_reader<R>(pipe: Option<R>, tx: mpsc::UnboundedSender<Vec<u8>>) -> JoinHandle<()>
@@ -314,6 +530,12 @@ impl Output {
         }
         self.persist();
         self.write_to_file(data);
+    }
+
+    /// The last lines so far, for a command that is still running.
+    fn recent(&self) -> String {
+        let text = String::from_utf8_lossy(&self.tail);
+        truncate_tail(text.trim_end_matches('\n'), RECENT_LINES, RECENT_BYTES).content
     }
 
     fn total_lines(&self) -> usize {
@@ -526,5 +748,73 @@ mod tests {
         let full = std::fs::read_to_string(path).unwrap();
         assert_eq!(full.lines().count(), 3000);
         std::fs::remove_file(path).unwrap();
+    }
+
+    fn task_id(text: &str) -> String {
+        let (_, rest) = text.split_once("Task ID: ").expect("task ID");
+        rest.lines().next().unwrap().to_string()
+    }
+
+    #[tokio::test]
+    async fn slow_commands_continue_as_tasks() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = bash(
+            dir.path(),
+            json!({"command": "echo started; sleep 1; echo finished", "wait": 0.3}),
+        )
+        .await;
+        assert!(!out.is_error, "{}", text(&out));
+        assert!(
+            text(&out).starts_with("Command is still running after 0 seconds. Task ID: bash-"),
+            "{}",
+            text(&out)
+        );
+        assert!(text(&out).ends_with("Latest output:\nstarted"), "{}", text(&out));
+        let id = task_id(text(&out));
+
+        let cancel = CancellationToken::new();
+        let out = result(json!({"task_id": id, "wait": 10}), &cancel).await;
+        assert_eq!(text(&out), "started\nfinished\n");
+
+        let out = result(json!({"task_id": id}), &cancel).await;
+        assert!(text(&out).starts_with("Unknown task ID"), "{}", text(&out));
+    }
+
+    #[tokio::test]
+    async fn waiting_again_reports_progress() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = bash(dir.path(), json!({"command": "sleep 1; echo done", "wait": 0})).await;
+        assert!(text(&out).ends_with("No output yet."), "{}", text(&out));
+        let id = task_id(text(&out));
+
+        let cancel = CancellationToken::new();
+        let out = result(json!({"task_id": id, "wait": 0.1}), &cancel).await;
+        assert!(text(&out).contains(&format!("Task ID: {id}")), "{}", text(&out));
+        let out = result(json!({"task_id": id, "wait": 10}), &cancel).await;
+        assert_eq!(text(&out), "done\n");
+    }
+
+    #[tokio::test]
+    async fn tasks_can_be_killed() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = bash(dir.path(), json!({"command": "echo hi; sleep 30", "wait": 0.3})).await;
+        let id = task_id(text(&out));
+
+        let started = Instant::now();
+        let out = kill(json!({"task_id": id})).await;
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(!out.is_error);
+        assert_eq!(text(&out), format!("Killed task {id}.\n\nhi\n\n\nCommand aborted"));
+        assert!(kill(json!({"task_id": id})).await.is_error);
+    }
+
+    #[tokio::test]
+    async fn wait_must_be_non_negative() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = bash(dir.path(), json!({"command": "true", "wait": -1})).await;
+        assert_eq!(
+            text(&out),
+            "Invalid wait: must be a non-negative number of seconds"
+        );
     }
 }
