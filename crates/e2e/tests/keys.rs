@@ -1,9 +1,14 @@
+#[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(unix)]
 use telehand_e2e::{Client, Env, json, mcp_status};
+#[cfg(unix)]
 use telehand_runner::{RunExit, RunnerConfig};
 use telehand_server::{admin, keys};
 
+// The admin socket that reaches a running server exists on Unix only.
+#[cfg(unix)]
 #[tokio::test]
 async fn keys_created_while_running_work_and_survive_persistence() {
     let env = Env::start().await;
@@ -35,6 +40,7 @@ async fn keys_created_while_running_work_and_survive_persistence() {
     runner.stop().await;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn removing_a_key_disconnects_its_runner_and_endpoint() {
     let env = Env::start().await;

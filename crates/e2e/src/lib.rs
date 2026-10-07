@@ -58,11 +58,12 @@ impl Env {
         telehand_proto::mcp_url(&self.server_url, &self.key)
     }
 
-    /// Create (and return the canonical path of) a directory inside the test's temp dir.
+    /// Create a directory inside the test's temp dir and return its canonical
+    /// path, spelled as the runner stores project folders.
     pub fn dir(&self, rel: &str) -> PathBuf {
         let path = self.tmp.path().join(rel);
         std::fs::create_dir_all(&path).unwrap();
-        path.canonicalize().unwrap()
+        PathBuf::from(telehand_runner::config::canonical_dir(&path).unwrap())
     }
 
     /// A registered runner config with the given projects (name, main folder).

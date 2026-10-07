@@ -174,7 +174,7 @@ mod tests {
         assert!(loaded.is_registered());
         assert_eq!(
             loaded.project("demo").unwrap().main_folder,
-            tmp.path().canonicalize().unwrap().to_string_lossy()
+            canonical_dir(tmp.path()).unwrap()
         );
     }
 
@@ -191,7 +191,7 @@ mod tests {
         let project = config.add_folder("demo", &extra).unwrap();
         assert_eq!(
             project.extra_folders,
-            vec![extra.canonicalize().unwrap().to_string_lossy().into_owned()]
+            vec![canonical_dir(&extra).unwrap()]
         );
         assert!(config.add_folder("demo", &extra).is_err());
         assert!(config.add_folder("demo", &main).is_err());

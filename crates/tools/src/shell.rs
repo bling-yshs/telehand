@@ -106,7 +106,11 @@ mod tests {
     fn a_custom_shell_must_exist() {
         let error = resolve(Some(Path::new("/no/such/bash"))).unwrap_err();
         assert!(error.contains(BASH_PATH_ENV), "{error}");
+    }
 
+    #[cfg(unix)]
+    #[test]
+    fn an_existing_custom_shell_is_used() {
         let config = resolve(Some(Path::new("/bin/sh"))).unwrap();
         assert_eq!(config.shell, PathBuf::from("/bin/sh"));
         assert_eq!(config.args, vec!["-c"]);

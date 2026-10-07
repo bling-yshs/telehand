@@ -2,6 +2,8 @@ use std::time::{Duration, Instant};
 
 use telehand_e2e::{Env, json};
 
+// `pwd` prints MSYS-style paths under Git Bash on Windows.
+#[cfg(unix)]
 #[tokio::test]
 async fn bash_runs_in_the_current_project() {
     let env = Env::start().await;

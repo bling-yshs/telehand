@@ -2,19 +2,25 @@
 //! socket in its data directory, so the server's in-memory key store stays
 //! the only writer of `keys.json`. When no server is running, commands edit
 //! `keys.json` directly.
+//!
+//! The socket is a Unix domain socket; on other platforms there is none and
+//! commands always edit `keys.json`.
 
 use std::{
-    io::ErrorKind,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use anyhow::{Context, bail};
+use anyhow::bail;
+#[cfg(unix)]
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{UnixListener, UnixStream},
 };
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -44,7 +50,10 @@ pub fn socket_path(data_dir: &Path) -> PathBuf {
 }
 
 /// Send `request` to the running server; `None` if no server is running.
+#[cfg(unix)]
 async fn send(data_dir: &Path, request: &Request) -> anyhow::Result<Option<Response>> {
+    use std::io::ErrorKind;
+
     let path = socket_path(data_dir);
     let stream = match UnixStream::connect(&path).await {
         Ok(stream) => stream,
@@ -62,6 +71,11 @@ async fn send(data_dir: &Path, request: &Request) -> anyhow::Result<Option<Respo
     Ok(Some(
         serde_json::from_str(&response).context("invalid admin response")?,
     ))
+}
+
+#[cfg(not(unix))]
+async fn send(_data_dir: &Path, _request: &Request) -> anyhow::Result<Option<Response>> {
+    Ok(None)
 }
 
 fn unexpected(response: Response) -> anyhow::Error {
@@ -104,8 +118,32 @@ pub async fn remove_key(data_dir: &Path, key: &str) -> anyhow::Result<()> {
     }
 }
 
+/// Start answering admin requests until `shutdown`.
+pub fn start(
+    data_dir: &Path,
+    state: Arc<AppState>,
+    shutdown: CancellationToken,
+) -> anyhow::Result<JoinHandle<()>> {
+    #[cfg(unix)]
+    {
+        let listener = bind(data_dir)?;
+        Ok(tokio::spawn(serve(
+            listener,
+            socket_path(data_dir),
+            state,
+            shutdown,
+        )))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (data_dir, state, shutdown);
+        Ok(tokio::spawn(async {}))
+    }
+}
+
 /// Bind the admin socket, replacing a stale socket file.
-pub fn bind(data_dir: &Path) -> anyhow::Result<UnixListener> {
+#[cfg(unix)]
+fn bind(data_dir: &Path) -> anyhow::Result<UnixListener> {
     let path = socket_path(data_dir);
     if path.exists() {
         if std::os::unix::net::UnixStream::connect(&path).is_ok() {
@@ -122,7 +160,8 @@ pub fn bind(data_dir: &Path) -> anyhow::Result<UnixListener> {
 }
 
 /// Answer admin requests until `shutdown`, then remove the socket file.
-pub async fn serve(
+#[cfg(unix)]
+async fn serve(
     listener: UnixListener,
     path: PathBuf,
     state: Arc<AppState>,
@@ -147,6 +186,7 @@ pub async fn serve(
     let _ = std::fs::remove_file(path);
 }
 
+#[cfg(unix)]
 async fn handle(stream: UnixStream, state: &AppState) -> anyhow::Result<()> {
     let (reader, mut writer) = stream.into_split();
     let mut line = String::new();

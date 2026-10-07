@@ -126,8 +126,12 @@ pub async fn run(project: &Project, args: Value) -> ToolOutput {
     let _guard = queue::lock(&real).await;
 
     // pi checks access(R_OK | W_OK) first; opening for read and write asks the same question.
+    // A directory passes that check in pi and then fails to be read (on Windows
+    // too, where reading a directory here would report access denied).
     let access = match tokio::fs::metadata(&real).await {
-        Ok(meta) if meta.is_dir() => Ok(()),
+        Ok(meta) if meta.is_dir() => {
+            return ToolOutput::error("EISDIR: illegal operation on a directory, read");
+        }
         Ok(_) => tokio::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -144,9 +148,6 @@ pub async fn run(project: &Project, args: Value) -> ToolOutput {
     }
     let bytes = match tokio::fs::read(&real).await {
         Ok(bytes) => bytes,
-        Err(e) if e.kind() == ErrorKind::IsADirectory => {
-            return ToolOutput::error("EISDIR: illegal operation on a directory, read");
-        }
         Err(e) => {
             return ToolOutput::error(format!(
                 "Could not edit file: {path}. Error code: {}.",
