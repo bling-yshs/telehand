@@ -49,12 +49,12 @@ fn tools() -> Vec<Tool> {
     let mut tools = vec![
         Tool::new(
             LIST_PROJECT,
-            "List the projects registered on the runner, with their main folder and extra folders, and mark the current project. The read, write, edit and bash tools operate on the current project: relative paths resolve against its main folder, write/edit may only modify files inside its folders, and bash runs commands in its main folder.",
+            "List the projects registered on the runner, with their main folder and extra folders, and mark the current project. The read, write, edit, bash, grep and find tools operate on the current project: relative paths resolve against its main folder, write/edit may only modify files inside its folders, and bash runs commands in its main folder.",
             schema(json!({"type": "object", "properties": {}})),
         ),
         Tool::new(
             SELECT_PROJECT,
-            "Select the current project by name. read, write, edit and bash operate on the current project until another one is selected. The selection is shared by every agent using this MCP URL.",
+            "Select the current project by name. read, write, edit, bash, grep and find operate on the current project until another one is selected. The selection is shared by every agent using this MCP URL.",
             schema(json!({
                 "type": "object",
                 "properties": {

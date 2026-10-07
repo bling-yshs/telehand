@@ -20,6 +20,12 @@ jobs:
           components: clippy
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # The grep and find tools run ripgrep and fd; Ubuntu names fd `fdfind`.
+      - name: Install ripgrep and fd
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep fd-find
+          sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
       - name: Test
         if: ${{ !cancelled() }}
         run: |

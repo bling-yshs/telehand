@@ -9,11 +9,14 @@ use tokio_util::sync::CancellationToken;
 mod bash;
 mod edit;
 mod edit_diff;
+mod find;
+mod grep;
 mod image;
 mod path;
 mod queue;
 mod read;
 mod scope;
+mod search;
 mod shell;
 mod truncate;
 mod write;
@@ -50,6 +53,8 @@ pub async fn execute(
         tool_defs::WRITE => write::run(project, args).await,
         tool_defs::EDIT => edit::run(project, args).await,
         tool_defs::BASH => bash::run(project, args, cancel).await,
+        tool_defs::GREP => grep::run(project, args, cancel).await,
+        tool_defs::FIND => find::run(project, args, cancel).await,
         _ => ToolOutput::error(format!("Unknown tool: {tool}")),
     }
 }

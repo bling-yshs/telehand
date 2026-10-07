@@ -123,7 +123,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 - runner 主动建立 WebSocket；普通断线指数退避重连。
 - 同一 key 新连接到来时踢掉旧连接（"已被替代" close code）；收到该 code 或"key 已移除" code 的 runner 打印提示并退出，不重连。
 - server 在 runner 断线时清空该 key 缓存的 project 列表（当前 project 选择仍保留在状态文件中）。
-- runner 离线时所有 9 个 MCP 工具立即返回 "runner offline"。
+- runner 离线时所有 11 个 MCP 工具立即返回 "runner offline"。
 - 工具调用超时约 60 秒；`bash` 与 `bash_result` 为 `wait` + 30 秒。
 - server 放弃等待某个请求时（超时、agent 取消 MCP 请求）向 runner 发送取消消息；runner 取消该请求：`bash` 在同步等待期间被取消时杀掉进程树，`bash_result` 被取消只是停止等待。runner 断线不取消任何请求，命令继续运行，重连后可用 `bash_result` 取回结果；runner 重启则任务记录丢失。
 - `bash_result` / `bash_kill` 不需要选中 project。
@@ -132,7 +132,8 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 
 - 使用官方 Rust MCP SDK 的 Streamable HTTP 服务端。SDK 不支持按路径区分租户，因此每个 key 懒创建一个独立的 MCP 服务实例，由一个按 key 分发的 HTTP 处理器转交；会话空间按 key 隔离。
 - SDK 默认只允许 loopback Host，需要放开以支持远程访问。
-- 暴露 9 个工具：`read`、`write`、`edit`、`bash`、`bash_result`、`bash_kill`、`list_project`、`select_project`、`current_project`。不提供 ls/find/grep。
+- 暴露 11 个工具：`read`、`write`、`edit`、`bash`、`bash_result`、`bash_kill`、`grep`、`find`、`list_project`、`select_project`、`current_project`。不提供 ls。
+- `grep` / `find` 照搬 pi，分别调用 runner 上的 ripgrep（`rg`）与 fd（`fd`）；默认它们已在 PATH 中，不检测、不下载。
 - 当前 project 挂在 key 上（全局），不依赖 MCP 会话（新版 MCP 规范已移除会话）。
 
 ### project 与路径
@@ -159,7 +160,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 
 ## Out of Scope
 
-- ls / find / grep 等文件发现工具。
+- ls 工具。
 - 多用户、账号体系、权限分级。
 - 内置 TLS / ACME。
 - 一个 key 同时服务多个 runner、负载均衡或 runner 高可用。

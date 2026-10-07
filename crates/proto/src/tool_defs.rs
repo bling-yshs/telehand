@@ -15,6 +15,8 @@ pub const EDIT: &str = "edit";
 pub const BASH: &str = "bash";
 pub const BASH_RESULT: &str = "bash_result";
 pub const BASH_KILL: &str = "bash_kill";
+pub const GREP: &str = "grep";
+pub const FIND: &str = "find";
 
 /// How long `bash` and `bash_result` wait for a command by default before
 /// returning while it keeps running.
@@ -29,6 +31,10 @@ const EDIT_DESCRIPTION: &str = "Edit a single file using exact text replacement.
 const BASH_DESCRIPTION: &str = "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds. If the command is still running after `wait` seconds (default 50), it keeps running and a task ID is returned with its latest output; call bash_result with the task ID to get the result, or bash_kill to stop it.";
 
 const BASH_RESULT_DESCRIPTION: &str = "Wait for a bash command that was still running when bash returned. Waits up to `wait` seconds (default 50): returns the command's result if it finished, otherwise its latest output; call again to keep waiting.";
+
+const GREP_DESCRIPTION: &str = "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.";
+
+const FIND_DESCRIPTION: &str = "Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).";
 
 const BASH_KILL_DESCRIPTION: &str = "Stop a running bash command by its task ID, killing it and every process it started, and return its output.";
 
@@ -138,6 +144,66 @@ pub fn runner_tools() -> Vec<ToolDef> {
                     }
                 },
                 "required": ["task_id"]
+            }),
+        },
+        ToolDef {
+            name: GREP,
+            description: GREP_DESCRIPTION,
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Search pattern (regex or literal string)"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory or file to search (default: current directory)"
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'"
+                    },
+                    "ignoreCase": {
+                        "type": "boolean",
+                        "description": "Case-insensitive search (default: false)"
+                    },
+                    "literal": {
+                        "type": "boolean",
+                        "description": "Treat pattern as literal string instead of regex (default: false)"
+                    },
+                    "context": {
+                        "type": "number",
+                        "description": "Number of lines to show before and after each match (default: 0)"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum number of matches to return (default: 100)"
+                    }
+                },
+                "required": ["pattern"]
+            }),
+        },
+        ToolDef {
+            name: FIND,
+            description: FIND_DESCRIPTION,
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory to search in (default: current directory)"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum number of results (default: 1000)"
+                    }
+                },
+                "required": ["pattern"]
             }),
         },
     ]
