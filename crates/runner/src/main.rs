@@ -47,6 +47,7 @@ enum ProjectCommand {
     /// List projects.
     List,
     /// Remove a project.
+    #[command(visible_alias = "rm")]
     Remove { name: String },
 }
 

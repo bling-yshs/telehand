@@ -39,9 +39,8 @@ enum KeyCommand {
     /// List keys.
     List,
     /// Remove a key; its runner is disconnected and its MCP URL stops working.
-    Rm {
-        key: String,
-    },
+    #[command(visible_alias = "rm")]
+    Remove { key: String },
 }
 
 #[tokio::main]
@@ -80,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
                 }
                 Ok(())
             }
-            KeyCommand::Rm { key } => {
+            KeyCommand::Remove { key } => {
                 admin::remove_key(&data_dir, &key).await?;
                 println!("Removed key {key}");
                 Ok(())

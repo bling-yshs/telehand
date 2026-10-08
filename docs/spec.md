@@ -23,7 +23,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 4. 作为管理员，我希望用 `key create` 生成一个 UUID key 并可附带备注名，以便区分不同机器。
 5. 作为管理员，我希望 key 是 UUID，以便不必担心被枚举猜中。
 6. 作为管理员，我希望用 `key list` 看到所有 key 及其备注和创建时间，以便管理。
-7. 作为管理员，我希望用 `key rm` 删除 key，以便在机器退役或 key 泄露时立即收回权限。
+7. 作为管理员，我希望用 `key remove`（别名 `rm`）删除 key，以便在机器退役或 key 泄露时立即收回权限。
 8. 作为管理员，我希望 server 运行中执行 key 命令也能立即生效，无需重启 server。
 9. 作为管理员，我希望 server 未运行时也能执行 key 命令，以便提前准备好 key。
 10. 作为管理员，我希望 server 运行中创建的 key 不会因为 server 自己的持久化而被覆盖丢失。
@@ -51,7 +51,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 26. 作为 runner 主人，我希望用 `project folder add <name> <dir>` 给 project 添加额外文件夹，以便 agent 能写入主目录之外的指定位置（例如共享配置目录）。
 27. 作为 runner 主人，我希望额外文件夹只扩大可写范围、不改变相对路径基准，以便行为可预测。
 28. 作为 runner 主人，我希望用 `project list` 查看所有 project 及其文件夹。
-29. 作为 runner 主人，我希望用 `project remove <name>` 删除 project，用 `project rename <name> <new_name>` 改名。
+29. 作为 runner 主人，我希望用 `project remove <name>`（别名 `rm`）删除 project，用 `project rename <name> <new_name>` 改名。
 30. 作为 runner 主人，我希望修改 project 配置后 CLI 提示需重启 `run` 才生效，以便我不会误以为已经生效。
 31. 作为 runner 主人，我希望 project 配置和访问权限判断都在 runner 本地完成，以便即使 server 被攻破，攻击者也无法写入我未授权的目录。
 
@@ -145,8 +145,8 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 
 ### CLI
 
-- server：`serve`（监听地址、数据目录）、`key create [--name]`、`key list`、`key rm <key>`。
-- runner：`register <server_url> <key>`、`run`、`project add <dir> [--name <name>]`、`project folder add <name> <dir>`、`project list`、`project rename <name> <new_name>`、`project remove <name>`。
+- server：`serve`（监听地址、数据目录）、`key create [--name]`、`key list`、`key remove <key>`（别名 `rm`）。
+- runner：`register <server_url> <key>`、`run`、`project add <dir> [--name <name>]`、`project folder add <name> <dir>`、`project list`、`project rename <name> <new_name>`、`project remove <name>`（别名 `rm`）。
 - MCP 地址由注册时的 server_url 拼接 `/mcp/<key>` 得到。
 
 ## Testing Decisions
