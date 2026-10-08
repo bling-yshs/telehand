@@ -57,8 +57,6 @@ enum FolderCommand {
     Add { name: String, dir: PathBuf },
 }
 
-const RESTART_HINT: &str = "Restart `telehand-runner run` for the change to take effect.";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -100,6 +98,17 @@ async fn main() -> anyhow::Result<()> {
                 shutdown_signal().await;
                 token.cancel();
             });
+            // Project changes take effect without a restart; if the config
+            // can't be watched, they take one.
+            let (config, _watcher) = match telehand_runner::watch_config(&path, config.clone()) {
+                Ok((config, watcher)) => (config, Some(watcher)),
+                Err(e) => {
+                    tracing::warn!(
+                        "cannot watch the config ({e:#}); restart the runner after changing projects"
+                    );
+                    (tokio::sync::watch::channel(config).1, None)
+                }
+            };
             let exit = telehand_runner::run(config, shutdown, |url| {
                 println!("Connected. MCP URL for agents: {url}");
             })
@@ -119,14 +128,14 @@ async fn main() -> anyhow::Result<()> {
                 let project = config.add_project(&dir, name.as_deref())?.clone();
                 config.save(&path)?;
                 println!(
-                    "Added project {} (main folder: {}). {RESTART_HINT}",
+                    "Added project {} (main folder: {}).",
                     project.name, project.main_folder
                 );
             }
             ProjectCommand::Rename { name, new_name } => {
                 config.rename_project(&name, &new_name)?;
                 config.save(&path)?;
-                println!("Renamed project {name} to {new_name}. {RESTART_HINT}");
+                println!("Renamed project {name} to {new_name}.");
             }
             ProjectCommand::Folder {
                 command: FolderCommand::Add { name, dir },
@@ -134,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
                 let project = config.add_folder(&name, &dir)?.clone();
                 config.save(&path)?;
                 println!(
-                    "Added folder {} to project {}. {RESTART_HINT}",
+                    "Added folder {} to project {}.",
                     project.extra_folders.last().expect("just added"),
                     project.name
                 );
@@ -156,7 +165,7 @@ async fn main() -> anyhow::Result<()> {
             ProjectCommand::Remove { name } => {
                 config.remove_project(&name)?;
                 config.save(&path)?;
-                println!("Removed project {name}. {RESTART_HINT}");
+                println!("Removed project {name}.");
             }
         },
     }

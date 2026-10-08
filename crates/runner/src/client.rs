@@ -18,7 +18,7 @@ use telehand_tools::{
     Project,
     summary::{self, Outcome},
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::tungstenite::{Message, protocol::CloseFrame};
 use tokio_util::sync::CancellationToken;
 
@@ -49,13 +49,16 @@ const MAX_BACKOFF: Duration = Duration::from_secs(30);
 
 /// Connect to the server and serve tool calls until told to stop, reconnecting
 /// with exponential backoff when the connection drops.
+/// `config` may change while running (see [`crate::watch_config`]); its new
+/// projects are sent to the server.
 /// `on_connected` is called with the MCP URL each time a connection is established.
 pub async fn run(
-    config: RunnerConfig,
+    config: watch::Receiver<RunnerConfig>,
     shutdown: CancellationToken,
     on_connected: impl Fn(&str),
 ) -> anyhow::Result<RunExit> {
-    let ws_url = telehand_proto::ws_url(&config.server_url).map_err(anyhow::Error::msg)?;
+    let server_url = config.borrow().server_url.clone();
+    let ws_url = telehand_proto::ws_url(&server_url).map_err(anyhow::Error::msg)?;
     let mut backoff = INITIAL_BACKOFF;
     loop {
         let mut connected = false;
@@ -197,7 +200,7 @@ impl LogLine {
 }
 
 async fn session(
-    config: &RunnerConfig,
+    config: &watch::Receiver<RunnerConfig>,
     ws_url: &str,
     shutdown: &CancellationToken,
     on_connected: &impl Fn(&str),
@@ -208,9 +211,19 @@ async fn session(
         .with_context(|| format!("connecting to {ws_url}"))?;
     let (mut sink, mut stream) = socket.split();
 
-    let hello = RunnerMessage::Hello {
-        key: config.key.clone(),
-        projects: config.projects.clone(),
+    // The hello reports the projects as they are now; later changes are sent
+    // as they happen.
+    let mut config = config.clone();
+    let (hello, mcp_url) = {
+        let config = config.borrow_and_update();
+        let hello = RunnerMessage::Hello {
+            key: config.key.clone(),
+            projects: config.projects.clone(),
+        };
+        (
+            hello,
+            telehand_proto::mcp_url(&config.server_url, &config.key),
+        )
     };
     sink.send(Message::text(hello.to_json())).await?;
 
@@ -234,7 +247,7 @@ async fn session(
         }
     }
     *connected = true;
-    on_connected(&telehand_proto::mcp_url(&config.server_url, &config.key));
+    on_connected(&mcp_url);
 
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<RunnerMessage>();
     let writer = tokio::spawn(async move {
@@ -253,9 +266,18 @@ async fn session(
 
     let mut idle_check = tokio::time::interval(Duration::from_secs(5));
     let mut last_seen = Instant::now();
+    // False once nothing can change the config any more.
+    let mut watching = true;
     let end = loop {
         tokio::select! {
             _ = shutdown.cancelled() => break SessionEnd::Exit(RunExit::Shutdown),
+            changed = config.changed(), if watching => match changed {
+                Ok(()) => {
+                    let projects = config.borrow_and_update().projects.clone();
+                    let _ = out_tx.send(RunnerMessage::Projects { projects });
+                }
+                Err(_) => watching = false,
+            },
             _ = idle_check.tick() => {
                 if last_seen.elapsed() > IDLE_TIMEOUT {
                     tracing::warn!("server stopped responding");
@@ -269,11 +291,14 @@ async fn session(
                     Some(Ok(Message::Text(text))) => match serde_json::from_str::<ServerMessage>(&text) {
                         Ok(ServerMessage::Request { id, project: project_name, tool, args }) => {
                             let out_tx = out_tx.clone();
-                            let project = config.project(&project_name).map(|p| Project {
-                                main_folder: PathBuf::from(&p.main_folder),
-                                extra_folders: p.extra_folders.iter().map(PathBuf::from).collect(),
-                            });
-                            let log = LogLine::new(config, &project_name, &tool, &args);
+                            let (project, log) = {
+                                let config = config.borrow();
+                                let project = config.project(&project_name).map(|p| Project {
+                                    main_folder: PathBuf::from(&p.main_folder),
+                                    extra_folders: p.extra_folders.iter().map(PathBuf::from).collect(),
+                                });
+                                (project, LogLine::new(&config, &project_name, &tool, &args))
+                            };
                             let cancel = CancellationToken::new();
                             in_flight.lock().unwrap().insert(id, cancel.clone());
                             let in_flight = in_flight.clone();

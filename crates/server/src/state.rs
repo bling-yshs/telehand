@@ -128,6 +128,16 @@ impl AppState {
         Ok(runners.insert(key.to_string(), handle))
     }
 
+    /// Replace the projects of the runner for `key`, if it is still connection
+    /// `conn_id` (not replaced by a newer runner).
+    pub fn set_runner_projects(&self, key: &str, conn_id: u64, projects: Vec<ProjectInfo>) {
+        if let Some(runner) = self.runners.lock().unwrap().get_mut(key)
+            && runner.conn_id == conn_id
+        {
+            runner.projects = projects;
+        }
+    }
+
     /// The projects reported by the runner for `key`, or `None` if it is offline.
     pub fn runner_projects(&self, key: &str) -> Option<Vec<ProjectInfo>> {
         self.runners

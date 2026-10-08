@@ -44,6 +44,10 @@ pub enum RunnerMessage {
         id: u64,
         output: ToolOutput,
     },
+    /// The runner's projects changed (its config file was edited) since its hello.
+    Projects {
+        projects: Vec<ProjectInfo>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -16,7 +16,7 @@ use rmcp::{
 };
 use serde_json::Value;
 use telehand_proto::ProjectInfo;
-use telehand_runner::{RunExit, RunnerConfig};
+use telehand_runner::{ConfigWatcher, RunExit, RunnerConfig};
 use telehand_server::{RunningServer, ServeOptions};
 use tempfile::TempDir;
 use tokio::task::JoinHandle;
@@ -82,10 +82,30 @@ impl Env {
         }
     }
 
+    /// Start a runner with a fixed config.
     pub fn start_runner(&self, config: RunnerConfig) -> Runner {
+        let (_, config) = tokio::sync::watch::channel(config);
         let shutdown = CancellationToken::new();
         let task = tokio::spawn(telehand_runner::run(config, shutdown.clone(), |_| {}));
-        Runner { shutdown, task }
+        Runner {
+            shutdown,
+            task,
+            _watcher: None,
+        }
+    }
+
+    /// Save `config` to `path` and start a runner that watches the file, as
+    /// `telehand-runner run` does.
+    pub fn start_runner_watching(&self, path: &Path, config: RunnerConfig) -> Runner {
+        config.save(path).unwrap();
+        let (config, watcher) = telehand_runner::watch_config(path, config).unwrap();
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(telehand_runner::run(config, shutdown.clone(), |_| {}));
+        Runner {
+            shutdown,
+            task,
+            _watcher: Some(watcher),
+        }
     }
 
     pub async fn client(&self) -> Client {
@@ -125,6 +145,7 @@ impl Env {
 pub struct Runner {
     shutdown: CancellationToken,
     task: JoinHandle<anyhow::Result<RunExit>>,
+    _watcher: Option<ConfigWatcher>,
 }
 
 impl Runner {

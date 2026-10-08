@@ -52,7 +52,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 27. 作为 runner 主人，我希望额外文件夹只扩大可写范围、不改变相对路径基准，以便行为可预测。
 28. 作为 runner 主人，我希望用 `project list` 查看所有 project 及其文件夹。
 29. 作为 runner 主人，我希望用 `project remove <name>`（别名 `rm`）删除 project，用 `project rename <name> <new_name>` 改名。
-30. 作为 runner 主人，我希望修改 project 配置后 CLI 提示需重启 `run` 才生效，以便我不会误以为已经生效。
+30. 作为 runner 主人，我希望修改 project 配置后运行中的 `run` 立即生效、无需重启，以便 agent 马上能用上新的 project。
 31. 作为 runner 主人，我希望 project 配置和访问权限判断都在 runner 本地完成，以便即使 server 被攻破，攻击者也无法写入我未授权的目录。
 
 ### project 选择（agent）
@@ -105,7 +105,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 
 ### 模块
 
-- **协议模块**（runner ↔ server 共享）：定义 WebSocket 消息。握手消息携带 key 与 project 列表；请求消息为通用形态（请求 id、project 名、工具名、任意 JSON 参数），以便新增工具无需改协议；响应消息为 MCP 内容块列表或错误；另有心跳。专用 close code 至少包括"已被替代"与"key 已移除/无效"。
+- **协议模块**（runner ↔ server 共享）：定义 WebSocket 消息。握手消息携带 key 与 project 列表，之后 project 变更时 runner 发送新的 project 列表；请求消息为通用形态（请求 id、project 名、工具名、任意 JSON 参数），以便新增工具无需改协议；响应消息为 MCP 内容块列表或错误；另有心跳。专用 close code 至少包括"已被替代"与"key 已移除/无效"。
 - **文件工具模块**（纯库，深模块）：对外接口仅为"给定 project 上下文（主文件夹、额外文件夹）与工具参数 → 返回内容块或错误"。内部封装路径规范化与解析、写范围检查、截断、read 的文本/图片处理与缩放、write、edit 的精确/模糊匹配、换行与 BOM 保留、同路径写串行化。所有 pi 行为（参数名、描述文案、截断提示、错误文案）集中在这里。
 - **server**：key 存储、管理通道、runner 注册表、MCP 端点。
 - **runner**：本地配置与 CLI、连接管理（重连、被替代/被移除时退出）、请求分发到文件工具模块。
@@ -138,7 +138,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 
 ### project 与路径
 
-- project 配置只存在于 runner 本地文件（同时保存 server 地址和 key）；变更需重启 runner 生效；runner 每次连接时上报 project 列表。
+- project 配置只存在于 runner 本地文件（同时保存 server 地址和 key）；runner 每次连接时上报 project 列表。runner 监视配置文件所在目录（文件以临时文件 rename 的方式替换），去抖后重新加载：project 变化时向 server 发送新列表，server 替换缓存；加载失败（如 JSON 写错）保留原配置并告警；server 地址和 key 的变更仍需重启生效。
 - project = 唯一名称 + 必填主文件夹 + 0..n 额外文件夹。
 - 相对路径相对主文件夹；绝对路径照收。`read` 不限范围；`write` / `edit` 的真实路径（解析软链与 `..`；不存在时取最近已存在祖先）必须位于某个 project 文件夹的真实路径之内。
 - 工具语义以 pi coding agent（earendil-works/pi 的 coding-agent 工具实现）为准逐项照搬，包括 read 图片缩放规则。
@@ -165,7 +165,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 - 内置 TLS / ACME。
 - 一个 key 同时服务多个 runner、负载均衡或 runner 高可用。
 - 按 MCP 会话隔离当前 project。
-- runner 配置热加载（修改后需重启）。
+- server 地址和 key 的热加载（修改后需重启 runner）。
 - runner 注册凭证与 agent 访问凭证分离（当前共用同一个 UUID key）。
 - Windows 上的 server 管理通道（unix socket）。
 

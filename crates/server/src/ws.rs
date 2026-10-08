@@ -150,6 +150,10 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                 let _ = waiter.send(output);
                             }
                         }
+                        Ok(RunnerMessage::Projects { projects }) => {
+                            tracing::info!(key = %key, count = projects.len(), "runner projects updated");
+                            state.set_runner_projects(&key, conn_id, projects);
+                        }
                         Ok(other) => tracing::warn!(?other, "unexpected runner message"),
                         Err(e) => tracing::warn!(error = %e, "invalid runner message"),
                     }

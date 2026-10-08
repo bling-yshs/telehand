@@ -2,6 +2,8 @@
 
 mod client;
 pub mod config;
+mod watch;
 
 pub use client::{RunExit, check_key, run};
 pub use config::RunnerConfig;
+pub use watch::{ConfigWatcher, watch_config};
