@@ -93,10 +93,7 @@ impl RunnerConfig {
             bail!("project name must not be empty");
         }
         if let Some(existing) = self.project(name) {
-            bail!(
-                "project '{name}' already exists ({})",
-                existing.main_folder
-            );
+            bail!("project '{name}' already exists ({})", existing.main_folder);
         }
         Ok(())
     }
@@ -189,10 +186,7 @@ mod tests {
         config.add_project(&main, Some("demo")).unwrap();
 
         let project = config.add_folder("demo", &extra).unwrap();
-        assert_eq!(
-            project.extra_folders,
-            vec![canonical_dir(&extra).unwrap()]
-        );
+        assert_eq!(project.extra_folders, vec![canonical_dir(&extra).unwrap()]);
         assert!(config.add_folder("demo", &extra).is_err());
         assert!(config.add_folder("demo", &main).is_err());
         assert!(config.add_folder("nope", &extra).is_err());

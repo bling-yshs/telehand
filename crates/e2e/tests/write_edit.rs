@@ -126,7 +126,10 @@ async fn symlinks_cannot_escape_the_project() {
         ),
     ] {
         let denied = client.err(tool, args.clone()).await;
-        assert!(denied.starts_with("Permission denied"), "{tool} {args}: {denied}");
+        assert!(
+            denied.starts_with("Permission denied"),
+            "{tool} {args}: {denied}"
+        );
     }
     assert_eq!(
         std::fs::read_to_string(outside.join("secret.txt")).unwrap(),
@@ -135,7 +138,10 @@ async fn symlinks_cannot_escape_the_project() {
     assert!(!outside.join("new.txt").exists());
 
     // Reading through a symlink is allowed.
-    assert_eq!(client.ok("read", json!({"path": "link-file"})).await, "secret");
+    assert_eq!(
+        client.ok("read", json!({"path": "link-file"})).await,
+        "secret"
+    );
 
     runner.stop().await;
 }

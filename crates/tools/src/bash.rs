@@ -23,7 +23,7 @@ use std::{
 
 use serde::Deserialize;
 use serde_json::Value;
-use telehand_proto::{ToolOutput, tool_defs::BASH_DEFAULT_WAIT_SECONDS};
+use telehand_proto::ToolOutput;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     process::Command,
@@ -117,10 +117,7 @@ pub async fn run(project: &Project, args: Value, cancel: &CancellationToken) -> 
     match wait_for(&task, wait, cancel, true).await {
         Some(ending) => report(&task, &ending),
         None => {
-            TASKS
-                .lock()
-                .unwrap()
-                .insert(task.id.clone(), task.clone());
+            TASKS.lock().unwrap().insert(task.id.clone(), task.clone());
             ToolOutput::text(still_running(&task))
         }
     }
@@ -188,7 +185,7 @@ fn unknown_task(id: &str) -> ToolOutput {
 }
 
 fn resolve_wait(seconds: Option<f64>) -> Result<Duration, String> {
-    let seconds = seconds.unwrap_or(BASH_DEFAULT_WAIT_SECONDS);
+    let seconds = seconds.unwrap_or(telehand_proto::tool_defs::BASH_DEFAULT_WAIT_SECONDS);
     if !seconds.is_finite() || seconds < 0.0 {
         return Err("Invalid wait: must be a non-negative number of seconds".to_string());
     }
@@ -464,7 +461,9 @@ fn kill_tree(pid: Option<u32>) {
     {
         use std::os::windows::process::CommandExt;
         let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
-        let taskkill = Path::new(&system_root).join("System32").join("taskkill.exe");
+        let taskkill = Path::new(&system_root)
+            .join("System32")
+            .join("taskkill.exe");
         let _ = std::process::Command::new(taskkill)
             .args(["/F", "/T", "/PID", &pid.to_string()])
             .stdin(Stdio::null())
@@ -610,11 +609,13 @@ impl Output {
             (_, Some(error)) => format!("(could not save: {error})"),
             (None, None) => "(could not save)".to_string(),
         };
-        let truncated_by = tail.truncated_by.unwrap_or(if self.total_bytes > DEFAULT_MAX_BYTES {
-            TruncatedBy::Bytes
-        } else {
-            TruncatedBy::Lines
-        });
+        let truncated_by = tail
+            .truncated_by
+            .unwrap_or(if self.total_bytes > DEFAULT_MAX_BYTES {
+                TruncatedBy::Bytes
+            } else {
+                TruncatedBy::Lines
+            });
         let end_line = total_lines;
         let start_line = (total_lines + 1).saturating_sub(tail.output_lines);
         if tail.last_line_partial {
@@ -698,10 +699,7 @@ mod tests {
         .await;
         assert!(started.elapsed() < Duration::from_secs(5));
         assert!(out.is_error);
-        assert_eq!(
-            text(&out),
-            "start\n\n\nCommand timed out after 0.5 seconds"
-        );
+        assert_eq!(text(&out), "start\n\n\nCommand timed out after 0.5 seconds");
 
         let out = bash(dir.path(), json!({"command": "true", "timeout": 0})).await;
         assert_eq!(
@@ -720,7 +718,12 @@ mod tests {
             token.cancel();
         });
         let started = Instant::now();
-        let out = run(&project(dir.path()), json!({"command": "sleep 10"}), &cancel).await;
+        let out = run(
+            &project(dir.path()),
+            json!({"command": "sleep 10"}),
+            &cancel,
+        )
+        .await;
         assert!(started.elapsed() < Duration::from_secs(5));
         assert_eq!(text(&out), "Command aborted");
     }
@@ -769,7 +772,11 @@ mod tests {
             "{}",
             text(&out)
         );
-        assert!(text(&out).ends_with("Latest output:\nstarted"), "{}", text(&out));
+        assert!(
+            text(&out).ends_with("Latest output:\nstarted"),
+            "{}",
+            text(&out)
+        );
         let id = task_id(text(&out));
 
         let cancel = CancellationToken::new();
@@ -783,13 +790,21 @@ mod tests {
     #[tokio::test]
     async fn waiting_again_reports_progress() {
         let dir = tempfile::tempdir().unwrap();
-        let out = bash(dir.path(), json!({"command": "sleep 1; echo done", "wait": 0})).await;
+        let out = bash(
+            dir.path(),
+            json!({"command": "sleep 1; echo done", "wait": 0}),
+        )
+        .await;
         assert!(text(&out).ends_with("No output yet."), "{}", text(&out));
         let id = task_id(text(&out));
 
         let cancel = CancellationToken::new();
         let out = result(json!({"task_id": id, "wait": 0.1}), &cancel).await;
-        assert!(text(&out).contains(&format!("Task ID: {id}")), "{}", text(&out));
+        assert!(
+            text(&out).contains(&format!("Task ID: {id}")),
+            "{}",
+            text(&out)
+        );
         let out = result(json!({"task_id": id, "wait": 10}), &cancel).await;
         assert_eq!(text(&out), "done\n");
     }
@@ -797,14 +812,21 @@ mod tests {
     #[tokio::test]
     async fn tasks_can_be_killed() {
         let dir = tempfile::tempdir().unwrap();
-        let out = bash(dir.path(), json!({"command": "echo hi; sleep 30", "wait": 0.3})).await;
+        let out = bash(
+            dir.path(),
+            json!({"command": "echo hi; sleep 30", "wait": 0.3}),
+        )
+        .await;
         let id = task_id(text(&out));
 
         let started = Instant::now();
         let out = kill(json!({"task_id": id})).await;
         assert!(started.elapsed() < Duration::from_secs(5));
         assert!(!out.is_error);
-        assert_eq!(text(&out), format!("Killed task {id}.\n\nhi\n\n\nCommand aborted"));
+        assert_eq!(
+            text(&out),
+            format!("Killed task {id}.\n\nhi\n\n\nCommand aborted")
+        );
         assert!(kill(json!({"task_id": id})).await.is_error);
     }
 

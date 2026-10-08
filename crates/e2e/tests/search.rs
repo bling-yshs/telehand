@@ -50,10 +50,16 @@ async fn grep_finds_matching_lines() {
             json!({"pattern": "helper", "path": "main.rs", "context": 1}),
         )
         .await;
-    assert_eq!(out, "main.rs-1- fn main() {\nmain.rs:2:     helper();\nmain.rs-3- }");
+    assert_eq!(
+        out,
+        "main.rs-1- fn main() {\nmain.rs:2:     helper();\nmain.rs-3- }"
+    );
 
     let out = client
-        .ok("grep", json!({"pattern": "HELPER", "ignoreCase": true, "glob": "*.rs"}))
+        .ok(
+            "grep",
+            json!({"pattern": "HELPER", "ignoreCase": true, "glob": "*.rs"}),
+        )
         .await;
     assert_eq!(sorted(&out).len(), 2, "{out}");
 
@@ -87,7 +93,9 @@ async fn find_matches_file_names_and_paths() {
     let out = client.ok("find", json!({"pattern": "src/*.rs"})).await;
     assert_eq!(out, "src/lib.rs");
 
-    let out = client.ok("find", json!({"pattern": "*.rs", "path": "src"})).await;
+    let out = client
+        .ok("find", json!({"pattern": "*.rs", "path": "src"}))
+        .await;
     assert_eq!(out, "lib.rs");
 
     let out = client.ok("find", json!({"pattern": "*.md"})).await;

@@ -11,16 +11,16 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::bail;
 #[cfg(unix)]
 use anyhow::Context;
+use anyhow::bail;
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinHandle;
 #[cfg(unix)]
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{UnixListener, UnixStream},
 };
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{

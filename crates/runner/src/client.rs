@@ -9,10 +9,15 @@ use std::{
 
 use anyhow::{Context, bail};
 use futures_util::{SinkExt, StreamExt};
+use serde_json::Value;
 use telehand_proto::{
-    CLOSE_INVALID_KEY, CLOSE_REPLACED, IDLE_TIMEOUT, RunnerMessage, ServerMessage,
+    CLOSE_INVALID_KEY, CLOSE_REPLACED, IDLE_TIMEOUT, RunnerMessage, ServerMessage, ToolOutput,
+    tool_defs,
 };
-use telehand_tools::Project;
+use telehand_tools::{
+    Project,
+    summary::{self, Outcome},
+};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::{Message, protocol::CloseFrame};
 use tokio_util::sync::CancellationToken;
@@ -113,6 +118,84 @@ fn close_exit(frame: Option<&CloseFrame>) -> Option<RunExit> {
     }
 }
 
+/// The longest tool name.
+const TOOL_WIDTH: usize = tool_defs::BASH_RESULT.len();
+/// The longest status.
+const STATUS_WIDTH: usize = "cancelled".len();
+
+/// A request in the console log, so the runner's owner sees what agents do.
+/// Lines have aligned columns: tool, project, status, elapsed time, then the
+/// key argument and any detail:
+/// `bash         telehand  ok          39.2s  cargo build -q`.
+struct LogLine {
+    tool: String,
+    project: String,
+    /// The width of the project column: the longest project name.
+    project_width: usize,
+    summary: String,
+}
+
+impl LogLine {
+    fn new(config: &RunnerConfig, project: &str, tool: &str, args: &Value) -> Self {
+        let project_width = config
+            .projects
+            .iter()
+            .map(|p| p.name.chars().count())
+            .max()
+            .unwrap_or(0);
+        Self {
+            tool: tool.to_string(),
+            project: if project.is_empty() { "-" } else { project }.to_string(),
+            project_width,
+            summary: summary::request(tool, args),
+        }
+    }
+
+    fn started(&self) {
+        tracing::info!("{}", self.format("started", None, None));
+    }
+
+    fn finished(&self, output: &ToolOutput, cancel: &CancellationToken, elapsed: Duration) {
+        let elapsed = Some(elapsed);
+        if cancel.is_cancelled() {
+            tracing::warn!("{}", self.format("cancelled", elapsed, None));
+            return;
+        }
+        match summary::outcome(output) {
+            Outcome::Ok => tracing::info!("{}", self.format("ok", elapsed, None)),
+            Outcome::Running(task) => {
+                tracing::info!(
+                    "{}",
+                    self.format("running", elapsed, Some(&format!("task {task}")))
+                )
+            }
+            Outcome::Error(error) => {
+                tracing::warn!("{}", self.format("error", elapsed, Some(&error)))
+            }
+        }
+    }
+
+    fn format(&self, status: &str, elapsed: Option<Duration>, detail: Option<&str>) -> String {
+        let elapsed = match elapsed {
+            None => String::new(),
+            Some(d) if d < Duration::from_secs(1) => format!("{}ms", d.as_millis()),
+            Some(d) => format!("{:.1}s", d.as_secs_f64()),
+        };
+        let mut line = format!(
+            "{:<TOOL_WIDTH$}  {:<project_width$}  {status:<STATUS_WIDTH$}  {elapsed:>7}  {}",
+            self.tool,
+            self.project,
+            self.summary,
+            project_width = self.project_width,
+        );
+        if let Some(detail) = detail {
+            line.push_str(": ");
+            line.push_str(detail);
+        }
+        line.trim_end().to_string()
+    }
+}
+
 async fn session(
     config: &RunnerConfig,
     ws_url: &str,
@@ -184,19 +267,26 @@ async fn session(
                 last_seen = Instant::now();
                 match msg {
                     Some(Ok(Message::Text(text))) => match serde_json::from_str::<ServerMessage>(&text) {
-                        Ok(ServerMessage::Request { id, project, tool, args }) => {
+                        Ok(ServerMessage::Request { id, project: project_name, tool, args }) => {
                             let out_tx = out_tx.clone();
-                            let project = config.project(&project).map(|p| Project {
+                            let project = config.project(&project_name).map(|p| Project {
                                 main_folder: PathBuf::from(&p.main_folder),
                                 extra_folders: p.extra_folders.iter().map(PathBuf::from).collect(),
                             });
+                            let log = LogLine::new(config, &project_name, &tool, &args);
                             let cancel = CancellationToken::new();
                             in_flight.lock().unwrap().insert(id, cancel.clone());
                             let in_flight = in_flight.clone();
                             tokio::spawn(async move {
+                                // Bash may run for long; show it right away.
+                                if tool == tool_defs::BASH {
+                                    log.started();
+                                }
+                                let started = Instant::now();
                                 let output =
                                     telehand_tools::execute(project.as_ref(), &tool, args, &cancel).await;
                                 in_flight.lock().unwrap().remove(&id);
+                                log.finished(&output, &cancel, started.elapsed());
                                 let _ = out_tx.send(RunnerMessage::Response { id, output });
                             });
                         }

@@ -18,6 +18,7 @@ mod read;
 mod scope;
 mod search;
 mod shell;
+pub mod summary;
 mod truncate;
 mod write;
 

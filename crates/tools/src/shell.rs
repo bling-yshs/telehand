@@ -129,8 +129,12 @@ mod tests {
 
     #[test]
     fn legacy_wsl_bash_reads_the_command_from_stdin() {
-        assert!(is_legacy_wsl_bash(Path::new(r"C:\Windows\System32\bash.exe")));
-        assert!(is_legacy_wsl_bash(Path::new("c:/windows/sysnative/BASH.EXE")));
+        assert!(is_legacy_wsl_bash(Path::new(
+            r"C:\Windows\System32\bash.exe"
+        )));
+        assert!(is_legacy_wsl_bash(Path::new(
+            "c:/windows/sysnative/BASH.EXE"
+        )));
         assert!(!is_legacy_wsl_bash(Path::new(GIT_BASH)));
         assert!(bash_config(Path::new(r"C:\Windows\System32\bash.exe")).command_via_stdin);
     }

@@ -36,7 +36,10 @@ pub async fn run(project: &Project, args: Value, cancel: &CancellationToken) -> 
     }
     let search_path = path::resolve(
         &project.main_folder,
-        args.path.as_deref().filter(|p| !p.is_empty()).unwrap_or("."),
+        args.path
+            .as_deref()
+            .filter(|p| !p.is_empty())
+            .unwrap_or("."),
     );
     let limit = args.limit.unwrap_or(DEFAULT_LIMIT);
 
@@ -124,8 +127,8 @@ fn fd_pattern(pattern: &str, windows: bool) -> (bool, String) {
 /// A result relative to the search directory, with `/` separators (keeping
 /// the trailing separator fd puts after directories).
 fn relativize(result: &str, search_path: &Path) -> String {
-    let trailing_separator = result.ends_with(std::path::MAIN_SEPARATOR)
-        || (cfg!(windows) && result.ends_with('/'));
+    let trailing_separator =
+        result.ends_with(std::path::MAIN_SEPARATOR) || (cfg!(windows) && result.ends_with('/'));
     let path = Path::new(result);
     let relative = match path.strip_prefix(search_path) {
         Ok(relative) if path.is_absolute() => relative.to_string_lossy().into_owned(),

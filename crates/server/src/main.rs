@@ -7,7 +7,12 @@ use telehand_server::{ServeOptions, admin};
 #[command(name = "telehand-server", version, about = "Telehand server")]
 struct Cli {
     /// Directory holding keys.json and admin.sock.
-    #[arg(long, global = true, env = "TELEHAND_DATA_DIR", default_value = "./data")]
+    #[arg(
+        long,
+        global = true,
+        env = "TELEHAND_DATA_DIR",
+        default_value = "./data"
+    )]
     data_dir: PathBuf,
     #[command(subcommand)]
     command: Command,

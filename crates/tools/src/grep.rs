@@ -56,7 +56,10 @@ pub async fn run(project: &Project, args: Value, cancel: &CancellationToken) -> 
     }
     let search_path = path::resolve(
         &project.main_folder,
-        args.path.as_deref().filter(|p| !p.is_empty()).unwrap_or("."),
+        args.path
+            .as_deref()
+            .filter(|p| !p.is_empty())
+            .unwrap_or("."),
     );
     let is_directory = match tokio::fs::metadata(&search_path).await {
         Ok(meta) => meta.is_dir(),
@@ -128,9 +131,7 @@ pub async fn run(project: &Project, args: Value, cancel: &CancellationToken) -> 
     }
 
     let display_path = |file: &Path| -> String {
-        if is_directory
-            && let Ok(relative) = file.strip_prefix(&search_path)
-        {
+        if is_directory && let Ok(relative) = file.strip_prefix(&search_path) {
             let relative = relative.to_string_lossy().replace('\\', "/");
             if !relative.is_empty() {
                 return relative;

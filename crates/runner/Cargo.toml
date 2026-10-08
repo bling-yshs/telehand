@@ -21,7 +21,7 @@ tokio.workspace = true
 tokio-tungstenite.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["chrono"] }
 
 [dev-dependencies]
 tempfile.workspace = true

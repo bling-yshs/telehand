@@ -308,10 +308,7 @@ mod tests {
 
         std::fs::create_dir(dir.path().join("sub")).unwrap();
         let out = run(&p, json!({"path": "sub", "edits": edit})).await;
-        assert_eq!(
-            text(&out),
-            "EISDIR: illegal operation on a directory, read"
-        );
+        assert_eq!(text(&out), "EISDIR: illegal operation on a directory, read");
     }
 
     #[cfg(unix)]
