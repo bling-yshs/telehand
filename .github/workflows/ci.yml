@@ -1,4 +1,4 @@
-name: CI
+name: 🧪 持续集成 (Continuous Integration)
 
 on:
   push:
@@ -11,54 +11,63 @@ env:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    name: 🔍 检查与测试 (Check and Test)
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: 检出代码 (Checkout)
+        uses: actions/checkout@v7
+      - name: 安装 Rust 工具链 (Install Rust Toolchain)
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
           components: clippy
-      - name: Clippy
+      - name: 运行 Clippy 检查 (Run Clippy)
         run: cargo clippy --workspace --all-targets -- -D warnings
       # The grep and find tools run ripgrep and fd; Ubuntu names fd `fdfind`.
-      - name: Install ripgrep and fd
+      - name: 安装 ripgrep 和 fd (Install ripgrep and fd)
         run: |
           sudo apt-get update
           sudo apt-get install -y ripgrep fd-find
           sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
-      - name: Test
+      - name: 运行测试 (Run Tests)
         if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           timeout 1200 cargo test --workspace --no-fail-fast 2>&1 | tee test.log
-      - name: Annotate test failures
+      - name: 标注测试失败 (Annotate Test Failures)
         if: ${{ failure() }}
         run: python3 .github/scripts/annotate.py test test.log --tests
 
   # Builds below run only after clippy and the tests pass.
   server-image:
+    name: 🐳 构建服务端镜像 (Build Server Image)
     needs: check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 45
     permissions:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - name: 检出代码 (Checkout)
+        uses: actions/checkout@v7
+      - name: 配置 Docker Buildx (Setup Docker Buildx)
+        uses: docker/setup-buildx-action@v4
+      - name: 登录 GHCR (Login to GHCR)
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        uses: docker/metadata-action@v5
+      - name: 生成镜像元数据 (Generate Image Metadata)
+        id: meta
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/telehand-server
           tags: |
             type=ref,event=branch
             type=sha
-      - uses: docker/build-push-action@v6
+      - name: 构建并推送镜像 (Build and Push Image)
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -68,19 +77,24 @@ jobs:
           cache-to: type=gha,mode=max
 
   windows-runner:
+    name: 🪟 构建 Windows Runner (Build Windows Runner)
     needs: check
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: 检出代码 (Checkout)
+        uses: actions/checkout@v7
+      # Warnings are already denied by the check job; don't fail the build on them.
+      - name: 安装 Rust 工具链 (Install Rust Toolchain)
+        uses: actions-rust-lang/setup-rust-toolchain@v2
         with:
-          rustflags: ""
-      - name: Build
+          build-warnings: warn
+      - name: 运行 build 构建 (Run Cargo Build)
         run: cargo build --release -p telehand-runner
       # archive: false uploads the bare exe instead of a zip; the artifact is
       # named after the file.
-      - uses: actions/upload-artifact@v7
+      - name: 上传构建产物 (Upload Build Artifacts)
+        uses: actions/upload-artifact@v7
         with:
           path: target/release/telehand-runner.exe
           archive: false
