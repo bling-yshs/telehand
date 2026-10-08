@@ -12,7 +12,8 @@ env:
 jobs:
   check:
     name: 🔍 检查与测试 (Check and Test)
-    runs-on: ubuntu-22.04
+    # The find tool passes --no-require-git, which needs fd >= 8.6; 22.04's apt has 8.3.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: 检出代码 (Checkout)
@@ -31,12 +32,7 @@ jobs:
           sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
       - name: 运行测试 (Run Tests)
         if: ${{ !cancelled() }}
-        run: |
-          set -o pipefail
-          timeout 1200 cargo test --workspace --no-fail-fast 2>&1 | tee test.log
-      - name: 标注测试失败 (Annotate Test Failures)
-        if: ${{ failure() }}
-        run: python3 .github/scripts/annotate.py test test.log --tests
+        run: cargo test --workspace --no-fail-fast
 
   # Builds below run only after clippy and the tests pass.
   server-image:
