@@ -145,7 +145,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 
 ### CLI
 
-- server：`serve`（监听地址、数据目录）、`key create [--name]`、`key list`、`key remove <key>`（别名 `rm`）。
+- server：`serve`（监听地址、数据目录）、`key create [--name]`（别名 `new`、`add`）、`key list`、`key remove <key>`（别名 `rm`）。
 - runner：`register <server_url> <key>`、`run`、`project add <dir> [--name <name>]`、`project folder add <name> <dir>`、`project list`、`project rename <name> <new_name>`、`project remove <name>`（别名 `rm`）。
 - MCP 地址由注册时的 server_url 拼接 `/mcp/<key>` 得到。
 

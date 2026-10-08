@@ -31,6 +31,7 @@ enum Command {
 #[derive(Subcommand)]
 enum KeyCommand {
     /// Create a key.
+    #[command(visible_aliases = ["new", "add"])]
     Create {
         /// A note to tell keys apart.
         #[arg(long)]
