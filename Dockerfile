@@ -1,5 +1,5 @@
 # telehand-server image. Build: docker build -t telehand-server .
-FROM rust:1-trixie AS chef
+FROM rust:1-alpine3.23 AS chef
 RUN cargo install cargo-chef --locked
 WORKDIR /src
 
@@ -14,7 +14,7 @@ RUN cargo chef cook --release -p telehand-server --recipe-path recipe.json
 COPY . .
 RUN cargo build --release -p telehand-server
 
-FROM debian:trixie-slim
+FROM alpine:3.23
 WORKDIR /app
 COPY --from=builder /src/target/release/telehand-server /app/telehand-server
 ENV PATH="/app:${PATH}" \
