@@ -72,6 +72,33 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  linux-runner:
+    name: 🐧 构建 Linux Runner (Build Linux Runner)
+    needs: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: 检出代码 (Checkout)
+        uses: actions/checkout@v7
+      # Static musl build, so the binary runs on any x86_64 Linux whatever its glibc.
+      - name: 安装 Rust 工具链 (Install Rust Toolchain)
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          target: x86_64-unknown-linux-musl
+          build-warnings: warn
+      # ring compiles C code; musl-gcc builds it for the musl target.
+      - name: 安装 musl 工具 (Install musl Tools)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+      - name: 运行 build 构建 (Run Cargo Build)
+        run: cargo build --release -p telehand-runner --target x86_64-unknown-linux-musl
+      - name: 上传构建产物 (Upload Build Artifacts)
+        uses: actions/upload-artifact@v7
+        with:
+          path: target/x86_64-unknown-linux-musl/release/telehand-runner
+          archive: false
+
   windows-runner:
     name: 🪟 构建 Windows Runner (Build Windows Runner)
     needs: check

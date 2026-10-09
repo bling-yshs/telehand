@@ -1,5 +1,5 @@
 //! The `find` tool, following pi's `find.ts`: finds files by glob pattern
-//! with fd (expected on PATH).
+//! with fd (expected on PATH, as `fd` or `fdfind`).
 
 use std::path::Path;
 
@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     Project, path,
     search::{self, Finished},
+    shell,
     truncate::{DEFAULT_MAX_BYTES, format_size, truncate_head},
 };
 
@@ -43,7 +44,7 @@ pub async fn run(project: &Project, args: Value, cancel: &CancellationToken) -> 
     );
     let limit = args.limit.unwrap_or(DEFAULT_LIMIT);
 
-    let mut cmd = Command::new("fd");
+    let mut cmd = Command::new(fd_program());
     cmd.args(["--glob", "--color=never", "--hidden"]);
     // fd ignores .gitignore outside git repositories unless told otherwise;
     // inside one, its default stops parent rules at nested repositories.
@@ -104,6 +105,15 @@ pub async fn run(project: &Project, args: Value, cancel: &CancellationToken) -> 
         output.push_str(&format!("\n\n[{}]", notices.join(". ")));
     }
     ToolOutput::text(output)
+}
+
+/// fd's executable: Debian and Ubuntu install it as `fdfind`.
+fn fd_program() -> &'static str {
+    if shell::find_on_path("fd").is_none() && shell::find_on_path("fdfind").is_some() {
+        "fdfind"
+    } else {
+        "fd"
+    }
 }
 
 /// Whether fd must match full paths, and the pattern to give it. fd's glob

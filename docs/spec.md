@@ -133,7 +133,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 - 使用官方 Rust MCP SDK 的 Streamable HTTP 服务端。SDK 不支持按路径区分租户，因此每个 key 懒创建一个独立的 MCP 服务实例，由一个按 key 分发的 HTTP 处理器转交；会话空间按 key 隔离。
 - SDK 默认只允许 loopback Host，需要放开以支持远程访问。
 - 暴露 11 个工具：`read`、`write`、`edit`、`bash`、`bash_result`、`bash_kill`、`grep`、`find`、`list_project`、`select_project`、`current_project`。不提供 ls。
-- `grep` / `find` 照搬 pi，分别调用 runner 上的 ripgrep（`rg`）与 fd（`fd`）；默认它们已在 PATH 中，不检测、不下载。
+- `grep` / `find` 照搬 pi，分别调用 runner 上的 ripgrep（`rg`）与 fd（`fd`；PATH 中没有 `fd` 而有 `fdfind` 时用后者，即 Debian/Ubuntu 的包名）；默认它们已在 PATH 中，不下载。
 - 当前 project 挂在 key 上（全局），不依赖 MCP 会话（新版 MCP 规范已移除会话）。
 
 ### project 与路径
