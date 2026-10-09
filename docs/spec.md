@@ -97,7 +97,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 ### 演进
 
 62. 作为开发者，我希望以后加入 `bash` 工具时不需要修改 runner 与 server 之间的消息协议。
-63. 作为 agent，我希望用 `bash` 在当前 project 的主文件夹里执行命令（语义照搬 pi：输出取最后 2000 行 / 50KB，截断时完整输出存入 runner 上的临时文件；非零退出码为错误；可选超时，超时或取消时杀掉整个进程树）。
+63. 作为 agent，我希望用 `bash` 在当前 project 的主文件夹里执行命令（语义照搬 pi，输出截断除外：退出码 0 时输出不超过 30,000 字符则全部返回，否则只返回开头 2,000 字符；失败（非零退出码、超时、取消）时不超过 10,000 字符则全部返回，否则返回开头与末尾各 5,000 字符；截断时完整输出存入 runner 临时目录下的 `telehand/task-output/<9 位 CUID2>.output` 并给出路径，runner 启动时删除其中超过 3 天的文件；非零退出码为错误；可选超时，超时或取消时杀掉整个进程树）。
 64. 作为 agent，我希望 `bash` 最多同步等待 `wait` 秒（默认 50）：命令在此之前结束则直接返回结果，否则命令继续在 runner 上运行并返回任务 ID 与最新输出；我用 `bash_result(task_id, wait)` 继续等待并取回结果（结果取回后任务即清除），用 `bash_kill(task_id)` 杀掉它。这样单次 MCP 调用总是很短，不受客户端请求超时限制。
 65. 作为 runner 主人，我希望在 Windows 上 `bash` 依次使用 `TELEHAND_GIT_BASH_PATH`、`C:\Program Files\Git\bin\bash.exe`、PATH 中的 `bash.exe`；macOS/Linux 照 pi 使用 `/bin/bash`、PATH 中的 `bash`、最后 `sh`（`TELEHAND_GIT_BASH_PATH` 在所有平台优先）。
 

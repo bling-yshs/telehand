@@ -17,6 +17,7 @@ base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive", "env"] }
+cuid2 = "0.1"
 dirs = "6"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 libc = "0.2"

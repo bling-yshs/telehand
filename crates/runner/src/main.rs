@@ -92,6 +92,8 @@ async fn main() -> anyhow::Result<()> {
             if !config.is_registered() {
                 bail!("not registered; run `telehand-runner register <server_url> <key>` first");
             }
+            // Full outputs of long commands left from earlier runs.
+            telehand_tools::clean_task_output();
             let shutdown = CancellationToken::new();
             let token = shutdown.clone();
             tokio::spawn(async move {

@@ -1,7 +1,8 @@
 //! The `bash` tool, following pi's `bash.ts`: runs a command in the project's
-//! main folder and returns stdout and stderr combined. Only the last 2000 lines
-//! / 50KB are returned; when output is cut, the full output is saved to a temp
-//! file whose path is shown.
+//! main folder and returns stdout and stderr combined. Long output is cut: a
+//! successful command shows the start of it, a failed one the start and the
+//! end, and the full output is saved to a file under the task output folder,
+//! whose path is shown.
 //!
 //! Unlike pi, a command still running after `wait` seconds (default 50) keeps
 //! running as a task: `bash` returns its task ID, `bash_result` waits for its
@@ -10,7 +11,7 @@
 
 use std::{
     collections::HashMap,
-    fs::File,
+    fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
     process::{ExitStatus, Stdio},
@@ -18,7 +19,7 @@ use std::{
         Arc, LazyLock, Mutex,
         atomic::{AtomicU64, Ordering},
     },
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use serde::Deserialize;
@@ -36,15 +37,28 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     Project,
     shell::{self, ShellConfig},
-    truncate::{DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, TruncatedBy, format_size, truncate_tail},
+    truncate::truncate_tail,
 };
 
 const MAX_TIMEOUT_SECONDS: f64 = 2_147_483.647;
 /// After the shell exits, keep reading until its pipes stay quiet this long:
 /// background processes it started may hold them open.
 const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
-/// How much of the output's end is kept in memory for the result.
-const ROLLING_BYTES: usize = DEFAULT_MAX_BYTES * 2;
+/// A successful command's output is returned in full up to this many
+/// characters; beyond that, only its first `SUCCESS_HEAD_CHARS`.
+const SUCCESS_MAX_CHARS: usize = 30_000;
+const SUCCESS_HEAD_CHARS: usize = 2_000;
+/// A failed command's output is returned in full up to this many characters;
+/// beyond that, only its first and last `FAILURE_EDGE_CHARS`.
+const FAILURE_MAX_CHARS: usize = 10_000;
+const FAILURE_EDGE_CHARS: usize = 5_000;
+/// Bytes that hold at least `FAILURE_EDGE_CHARS` characters (UTF-8 takes at
+/// most 4 bytes per character), kept from the output's start and end.
+const EDGE_BYTES: usize = FAILURE_EDGE_CHARS * 4;
+/// Length of the random name of a task output file.
+const OUTPUT_ID_LENGTH: u16 = 9;
+/// Task output files older than this are deleted when the runner starts.
+const OUTPUT_MAX_AGE: Duration = Duration::from_secs(3 * 24 * 60 * 60);
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// How much of the latest output a still-running task shows.
@@ -276,10 +290,13 @@ fn report(task: &Task, ending: &Ending) -> ToolOutput {
 fn outcome(task: &Task, ending: &Ending) -> (String, bool) {
     let mut output = task.output.lock().unwrap();
     match ending {
-        Ending::Aborted => (append_status(&output.format(""), "Command aborted"), true),
+        Ending::Aborted => (
+            append_status(&output.format("", false), "Command aborted"),
+            true,
+        ),
         Ending::TimedOut => (
             append_status(
-                &output.format(""),
+                &output.format("", false),
                 &format!(
                     "Command timed out after {} seconds",
                     task.timeout.unwrap_or_default()
@@ -287,10 +304,10 @@ fn outcome(task: &Task, ending: &Ending) -> (String, bool) {
             ),
             true,
         ),
-        Ending::Exited(0) => (output.format("(no output)"), false),
+        Ending::Exited(0) => (output.format("(no output)", true), false),
         Ending::Exited(code) => (
             append_status(
-                &output.format("(no output)"),
+                &output.format("(no output)", false),
                 &format!("Command exited with code {code}"),
             ),
             true,
@@ -474,17 +491,46 @@ fn kill_tree(pid: Option<u32>) {
     }
 }
 
-/// Collects streamed output with bounded memory (pi's `OutputAccumulator`):
-/// the end of the output stays in memory, and once the output exceeds the
-/// limits all of it goes to a temp file.
+/// The folder full outputs of long commands are saved in.
+fn task_output_dir() -> PathBuf {
+    std::env::temp_dir().join("telehand").join("task-output")
+}
+
+/// Delete task output files older than three days, left from earlier runs.
+pub fn clean_task_output() {
+    clean_old_files(&task_output_dir(), OUTPUT_MAX_AGE);
+}
+
+fn clean_old_files(dir: &Path, max_age: Duration) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let old = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age > max_age);
+        if metadata.is_file() && old {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// Collects streamed output with bounded memory: the start and the end of the
+/// output stay in memory, and once the output is longer than any command may
+/// return in full, all of it goes to a file.
 struct Output {
+    /// The first `EDGE_BYTES` bytes.
+    head: Vec<u8>,
+    /// At least the last `EDGE_BYTES` bytes, starting at a character boundary.
     tail: Vec<u8>,
-    tail_starts_at_line_boundary: bool,
-    total_bytes: usize,
-    completed_lines: usize,
-    current_line_bytes: usize,
-    has_open_line: bool,
-    /// Output not yet in the temp file (there is none while within limits).
+    total_chars: usize,
+    /// Output not yet in the file (all of it while there is no file).
     buffered: Vec<u8>,
     file: Option<(PathBuf, File)>,
     file_error: Option<String>,
@@ -493,12 +539,9 @@ struct Output {
 impl Output {
     fn new() -> Self {
         Self {
+            head: Vec::new(),
             tail: Vec::new(),
-            tail_starts_at_line_boundary: true,
-            total_bytes: 0,
-            completed_lines: 0,
-            current_line_bytes: 0,
-            has_open_line: false,
+            total_chars: 0,
             buffered: Vec::new(),
             file: None,
             file_error: None,
@@ -506,24 +549,16 @@ impl Output {
     }
 
     fn append(&mut self, data: &[u8]) {
-        self.total_bytes += data.len();
+        // UTF-8 continuation bytes do not start a character.
+        self.total_chars += data.iter().filter(|&&b| (b & 0xC0) != 0x80).count();
+        let room = EDGE_BYTES.saturating_sub(self.head.len());
+        self.head.extend_from_slice(&data[..room.min(data.len())]);
         self.tail.extend_from_slice(data);
-        if self.tail.len() > ROLLING_BYTES * 2 {
+        if self.tail.len() > EDGE_BYTES * 2 {
             self.trim_tail();
         }
-        match data.iter().rposition(|&b| b == b'\n') {
-            None => {
-                self.current_line_bytes += data.len();
-                self.has_open_line |= !data.is_empty();
-            }
-            Some(last) => {
-                self.completed_lines += data.iter().filter(|&&b| b == b'\n').count();
-                self.current_line_bytes = data.len() - last - 1;
-                self.has_open_line = self.current_line_bytes > 0;
-            }
-        }
 
-        if self.file.is_none() && !self.exceeds_limits() {
+        if self.file.is_none() && self.total_chars <= SUCCESS_MAX_CHARS {
             self.buffered.extend_from_slice(data);
             return;
         }
@@ -537,35 +572,34 @@ impl Output {
         truncate_tail(text.trim_end_matches('\n'), RECENT_LINES, RECENT_BYTES).content
     }
 
-    fn total_lines(&self) -> usize {
-        self.completed_lines + usize::from(self.has_open_line)
-    }
-
-    fn exceeds_limits(&self) -> bool {
-        self.total_bytes > DEFAULT_MAX_BYTES || self.total_lines() > DEFAULT_MAX_LINES
-    }
-
     fn trim_tail(&mut self) {
-        let mut start = self.tail.len() - ROLLING_BYTES;
+        let mut start = self.tail.len() - EDGE_BYTES;
         while start < self.tail.len() && (self.tail[start] & 0xC0) == 0x80 {
             start += 1;
         }
-        self.tail_starts_at_line_boundary = self.tail[start - 1] == b'\n';
         self.tail.drain(..start);
     }
 
-    /// Move the output into a temp file, if not done yet.
+    /// Move the output into a file, if not done yet.
     fn persist(&mut self) {
         if self.file.is_some() || self.file_error.is_some() {
             return;
         }
-        let created = tempfile::Builder::new()
-            .prefix("telehand-bash-")
-            .suffix(".log")
-            .tempfile()
-            .and_then(|file| file.keep().map_err(|e| e.error));
+        let dir = task_output_dir();
+        let path = dir.join(format!(
+            "{}.output",
+            cuid2::CuidConstructor::new()
+                .with_length(OUTPUT_ID_LENGTH)
+                .create_id()
+        ));
+        let created = fs::create_dir_all(&dir).and_then(|()| {
+            File::options()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+        });
         match created {
-            Ok((file, path)) => {
+            Ok(file) => {
                 self.file = Some((path, file));
                 let buffered = std::mem::take(&mut self.buffered);
                 self.write_to_file(&buffered);
@@ -582,26 +616,23 @@ impl Output {
         }
     }
 
-    /// The text for the agent: the end of the output, with a note on where the
-    /// full output is when it was cut. `empty` stands in for no output.
-    fn format(&mut self, empty: &str) -> String {
-        let text = String::from_utf8_lossy(&self.tail);
-        let text = if self.tail_starts_at_line_boundary {
-            &text[..]
+    /// The text for the agent: all of the output, or for long output its start
+    /// (and, if the command failed, its end) with where the full output is.
+    /// `empty` stands in for no output.
+    fn format(&mut self, empty: &str, succeeded: bool) -> String {
+        let max_chars = if succeeded {
+            SUCCESS_MAX_CHARS
         } else {
-            text.split_once('\n').map_or(&text[..], |(_, rest)| rest)
+            FAILURE_MAX_CHARS
         };
-        let tail = truncate_tail(text, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES);
-        let total_lines = self.total_lines();
-        let truncated = total_lines > DEFAULT_MAX_LINES || self.total_bytes > DEFAULT_MAX_BYTES;
-
-        let mut result = if tail.content.is_empty() {
-            empty.to_string()
-        } else {
-            tail.content.clone()
-        };
-        if !truncated {
-            return result;
+        if self.total_chars <= max_chars {
+            // Within the limits, all of the output is still buffered.
+            let text = String::from_utf8_lossy(&self.buffered);
+            return if text.is_empty() {
+                empty.to_string()
+            } else {
+                text.into_owned()
+            };
         }
         self.persist();
         let full_output = match (&self.file, &self.file_error) {
@@ -609,32 +640,35 @@ impl Output {
             (_, Some(error)) => format!("(could not save: {error})"),
             (None, None) => "(could not save)".to_string(),
         };
-        let truncated_by = tail
-            .truncated_by
-            .unwrap_or(if self.total_bytes > DEFAULT_MAX_BYTES {
-                TruncatedBy::Bytes
-            } else {
-                TruncatedBy::Lines
-            });
-        let end_line = total_lines;
-        let start_line = (total_lines + 1).saturating_sub(tail.output_lines);
-        if tail.last_line_partial {
-            result.push_str(&format!(
-                "\n\n[Showing last {} of line {end_line} (line is {}). Full output: {full_output}]",
-                format_size(tail.output_bytes),
-                format_size(self.current_line_bytes)
-            ));
-        } else if truncated_by == TruncatedBy::Lines {
-            result.push_str(&format!(
-                "\n\n[Showing lines {start_line}-{end_line} of {total_lines}. Full output: {full_output}]"
-            ));
+        let note = format!("[Output truncated. Full output: {full_output}]");
+        let head = String::from_utf8_lossy(&self.head);
+        if succeeded {
+            format!("{}\n\n{note}", first_chars(&head, SUCCESS_HEAD_CHARS))
         } else {
-            result.push_str(&format!(
-                "\n\n[Showing lines {start_line}-{end_line} of {total_lines} ({} limit). Full output: {full_output}]",
-                format_size(DEFAULT_MAX_BYTES)
-            ));
+            let tail = String::from_utf8_lossy(&self.tail);
+            format!(
+                "{}\n\n{note}\n\n{}",
+                first_chars(&head, FAILURE_EDGE_CHARS),
+                last_chars(&tail, FAILURE_EDGE_CHARS)
+            )
         }
-        result
+    }
+}
+
+fn first_chars(text: &str, count: usize) -> &str {
+    text.char_indices()
+        .nth(count)
+        .map_or(text, |(end, _)| &text[..end])
+}
+
+fn last_chars(text: &str, count: usize) -> &str {
+    match count.checked_sub(1) {
+        None => "",
+        Some(skip) => text
+            .char_indices()
+            .rev()
+            .nth(skip)
+            .map_or(text, |(start, _)| &text[start..]),
     }
 }
 
@@ -737,20 +771,92 @@ mod tests {
         assert_eq!(text(&out), "done\n");
     }
 
-    #[tokio::test]
-    async fn long_output_keeps_the_end_and_saves_the_rest() {
-        let dir = tempfile::tempdir().unwrap();
-        let out = bash(dir.path(), json!({"command": "seq 1 3000"})).await;
-        assert!(!out.is_error);
-        let text = text(&out);
-        assert!(text.starts_with("1001\n1002\n"), "{}", &text[..20]);
-        let (_, note) = text
-            .split_once("\n\n[Showing lines 1001-3000 of 3000. Full output: ")
+    /// Split off the truncation note, returning the text around it and the
+    /// saved full output (deleting its file).
+    fn split_note(text: &str) -> (&str, &str, String) {
+        let (before, rest) = text
+            .split_once("\n\n[Output truncated. Full output: ")
             .expect("truncation note");
-        let path = note.strip_suffix(']').unwrap();
+        let (path, after) = rest.split_once(']').unwrap();
+        assert!(
+            Path::new(path).starts_with(task_output_dir()),
+            "{path}"
+        );
+        let name = Path::new(path).file_name().unwrap().to_str().unwrap();
+        assert_eq!(name.len(), "123456789.output".len(), "{name}");
+        assert!(name.ends_with(".output"), "{name}");
         let full = std::fs::read_to_string(path).unwrap();
-        assert_eq!(full.lines().count(), 3000);
         std::fs::remove_file(path).unwrap();
+        (before, after, full)
+    }
+
+    #[tokio::test]
+    async fn long_successful_output_keeps_the_start_and_saves_all() {
+        let dir = tempfile::tempdir().unwrap();
+        // 30,000 characters of two bytes each fit; one more character does not.
+        let out = bash(
+            dir.path(),
+            json!({"command": "printf 'é%.0s' $(seq 30000)"}),
+        )
+        .await;
+        assert_eq!(text(&out), "é".repeat(30_000));
+
+        let out = bash(
+            dir.path(),
+            json!({"command": "printf 'é%.0s' $(seq 30001)"}),
+        )
+        .await;
+        assert!(!out.is_error);
+        let (head, after, full) = split_note(text(&out));
+        assert_eq!(head, "é".repeat(2_000));
+        assert_eq!(after, "");
+        assert_eq!(full, "é".repeat(30_001));
+    }
+
+    #[tokio::test]
+    async fn long_failing_output_keeps_the_start_and_end_and_saves_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = bash(
+            dir.path(),
+            json!({"command": "printf 'a%.0s' $(seq 10000); exit 2"}),
+        )
+        .await;
+        assert_eq!(
+            text(&out),
+            format!("{}\n\nCommand exited with code 2", "a".repeat(10_000))
+        );
+
+        let out = bash(
+            dir.path(),
+            json!({"command": "printf 'a%.0s' $(seq 5000); printf 'b%.0s' $(seq 1001); printf 'c%.0s' $(seq 5000); exit 2"}),
+        )
+        .await;
+        assert!(out.is_error);
+        let (head, after, full) = split_note(text(&out));
+        assert_eq!(head, "a".repeat(5_000));
+        assert_eq!(
+            after,
+            format!("\n\n{}\n\nCommand exited with code 2", "c".repeat(5_000))
+        );
+        assert_eq!(
+            full,
+            format!("{}{}{}", "a".repeat(5_000), "b".repeat(1_001), "c".repeat(5_000))
+        );
+    }
+
+    #[test]
+    fn old_task_output_is_cleaned() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join("old.output");
+        let new = dir.path().join("new.output");
+        File::create(&old)
+            .unwrap()
+            .set_modified(SystemTime::now() - OUTPUT_MAX_AGE - Duration::from_secs(60))
+            .unwrap();
+        File::create(&new).unwrap();
+        clean_old_files(dir.path(), OUTPUT_MAX_AGE);
+        assert!(!old.exists());
+        assert!(new.exists());
     }
 
     fn task_id(text: &str) -> String {

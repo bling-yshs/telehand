@@ -22,6 +22,8 @@ pub mod summary;
 mod truncate;
 mod write;
 
+pub use bash::clean_task_output;
+
 /// The folders of the project a tool call operates on.
 #[derive(Debug, Clone)]
 pub struct Project {

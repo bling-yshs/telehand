@@ -28,7 +28,7 @@ const WRITE_DESCRIPTION: &str = "Write content to a file. Creates the file if it
 
 const EDIT_DESCRIPTION: &str = "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.";
 
-const BASH_DESCRIPTION: &str = "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds. If the command is still running after `wait` seconds (default 50), it keeps running and a task ID is returned with its latest output; call bash_result with the task ID to get the result, or bash_kill to stop it.";
+const BASH_DESCRIPTION: &str = "Execute a bash command in the current working directory.";
 
 const BASH_RESULT_DESCRIPTION: &str = "Wait for a bash command that was still running when bash returned. Waits up to `wait` seconds (default 50): returns the command's result if it finished, otherwise its latest output; call again to keep waiting.";
 
