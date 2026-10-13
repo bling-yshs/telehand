@@ -52,54 +52,55 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 27. 作为 runner 主人，我希望额外文件夹只扩大可写范围、不改变相对路径基准，以便行为可预测。
 28. 作为 runner 主人，我希望用 `project list` 查看所有 project 及其文件夹。
 29. 作为 runner 主人，我希望用 `project remove <name>`（别名 `rm`）删除 project，用 `project rename <name> <new_name>` 改名。
-30. 作为 runner 主人，我希望修改 project 配置后运行中的 `run` 立即生效、无需重启，以便 agent 马上能用上新的 project。
-31. 作为 runner 主人，我希望 project 配置和访问权限判断都在 runner 本地完成，以便即使 server 被攻破，攻击者也无法写入我未授权的目录。
+30. 作为 runner 主人，我希望直接运行 `telehand-runner` 就能在交互式菜单里完成注册、运行和 project 管理（选择已有 project 而不必手打名称，输入文件夹时可用 Tab 补全），以便不必记命令；子命令仍保留给脚本使用。
+31. 作为 runner 主人，我希望修改 project 配置后运行中的 `run` 立即生效、无需重启，以便 agent 马上能用上新的 project。
+32. 作为 runner 主人，我希望 project 配置和访问权限判断都在 runner 本地完成，以便即使 server 被攻破，攻击者也无法写入我未授权的目录。
 
 ### project 选择（agent）
 
-32. 作为 agent，我希望用 `list_project` 看到 runner 上所有 project 的名称、主文件夹、额外文件夹，以及哪个是当前 project。
-33. 作为 agent，我希望用 `select_project(name)` 切换当前 project，以便之后的文件操作都作用于它。
-34. 作为 agent，我希望选择一个不存在的 project 时得到明确错误。
-35. 作为 agent，我希望用 `current_project` 查看当前 project 详情，以便确认工作目录和可写范围。
-36. 作为 agent，我希望当前 project 的选择在 server 重启、runner 重连后依然保留，以便不必每次重新选择。
-37. 作为 agent，我希望在还没有选择 project（或选择的 project 已被删除）时调用文件工具，得到提示我先 `list_project` / `select_project` 的错误。
-38. 作为使用同一个 MCP 地址的多个 agent 会话的用户，我理解当前 project 是挂在 key 上全局共享的，一个会话切换会影响其他会话。
+33. 作为 agent，我希望用 `list_project` 看到 runner 上所有 project 的名称、主文件夹、额外文件夹，以及哪个是当前 project。
+34. 作为 agent，我希望用 `select_project(name)` 切换当前 project，以便之后的文件操作都作用于它。
+35. 作为 agent，我希望选择一个不存在的 project 时得到明确错误。
+36. 作为 agent，我希望用 `current_project` 查看当前 project 详情，以便确认工作目录和可写范围。
+37. 作为 agent，我希望当前 project 的选择在 server 重启、runner 重连后依然保留，以便不必每次重新选择。
+38. 作为 agent，我希望在还没有选择 project（或选择的 project 已被删除）时调用文件工具，得到提示我先 `list_project` / `select_project` 的错误。
+39. 作为使用同一个 MCP 地址的多个 agent 会话的用户，我理解当前 project 是挂在 key 上全局共享的，一个会话切换会影响其他会话。
 
 ### 文件操作（agent）
 
-39. 作为 agent，我希望 `read` 接受相对路径（相对主文件夹）和绝对路径。
-40. 作为 agent，我希望 `read` 可以读取 runner 上任意路径的文件，以便查看系统配置、依赖源码等参考资料。
-41. 作为 agent，我希望 `read` 支持 1 起始的 `offset` 和 `limit`，以便分段读取大文件。
-42. 作为 agent，我希望 `read` 输出在 2000 行或 50KB（先到为准）处截断，并附带"用 offset=N 继续"的提示，以便不撑爆上下文又知道如何继续。
-43. 作为 agent，我希望 `offset` 超出文件末尾时得到包含总行数的错误。
-44. 作为 agent，我希望读取图片文件（jpg/png/gif/webp/bmp）时得到 MCP image 内容，且过大的图片被自动缩放，以便我能"看"图又不浪费上下文。
-45. 作为 agent，我希望路径中的 `~`、前导 `@`、`file://` 前缀、Unicode 空格变体被自动规范化，以便我常见的路径写法都能用。
-46. 作为 agent，我希望 `write` 在文件不存在时创建、存在时覆盖，并自动创建父目录。
-47. 作为 agent，我希望 `write` 成功后得到简短的成功信息。
-48. 作为 agent，我希望 `edit` 用一组 `{oldText, newText}` 在一次调用中完成多处替换，以便减少往返。
-49. 作为 agent，我希望 `edit` 的每个 `oldText` 都对原文件匹配（而非逐步应用），并要求唯一、不重叠，以便结果确定。
-50. 作为 agent，我希望 `oldText` 精确匹配失败时，`edit` 用模糊匹配（Unicode 规范化、忽略行尾空白、智能引号/破折号/特殊空格归一）再试一次，以便我复制文本时的细微差异不导致失败。
-51. 作为 agent，我希望 `edit` 保留文件原有的换行风格（CRLF/LF）和 BOM，以便不产生无关 diff。
-52. 作为 agent，我希望 `edit` 在找不到、多处匹配、重叠、空 `oldText`、替换后无变化时分别给出明确、可操作的错误信息。
-53. 作为 agent，我希望 `edit` 宽容地接受旧式的顶层 `oldText`/`newText` 参数，或被序列化成字符串的 `edits`，以便不同模型的调用习惯都能成功。
-54. 作为 agent，我希望 `write` / `edit` 的目标在 project 文件夹范围之外时被拒绝并说明原因。
-55. 作为 runner 主人，我希望范围检查基于解析软链和 `..` 后的真实路径，以便 agent 无法借软链或相对路径逃逸。
-56. 作为 runner 主人，我希望写入一个尚不存在的文件时，范围检查基于其最近已存在祖先目录的真实路径，以便新建文件同样受约束。
-57. 作为 agent，我希望对同一文件的并发 `write` / `edit` 被依次执行，以便不会互相覆盖。
+40. 作为 agent，我希望 `read` 接受相对路径（相对主文件夹）和绝对路径。
+41. 作为 agent，我希望 `read` 可以读取 runner 上任意路径的文件，以便查看系统配置、依赖源码等参考资料。
+42. 作为 agent，我希望 `read` 支持 1 起始的 `offset` 和 `limit`，以便分段读取大文件。
+43. 作为 agent，我希望 `read` 输出在 2000 行或 50KB（先到为准）处截断，并附带"用 offset=N 继续"的提示，以便不撑爆上下文又知道如何继续。
+44. 作为 agent，我希望 `offset` 超出文件末尾时得到包含总行数的错误。
+45. 作为 agent，我希望读取图片文件（jpg/png/gif/webp/bmp）时得到 MCP image 内容，且过大的图片被自动缩放，以便我能"看"图又不浪费上下文。
+46. 作为 agent，我希望路径中的 `~`、前导 `@`、`file://` 前缀、Unicode 空格变体被自动规范化，以便我常见的路径写法都能用。
+47. 作为 agent，我希望 `write` 在文件不存在时创建、存在时覆盖，并自动创建父目录。
+48. 作为 agent，我希望 `write` 成功后得到简短的成功信息。
+49. 作为 agent，我希望 `edit` 用一组 `{oldText, newText}` 在一次调用中完成多处替换，以便减少往返。
+50. 作为 agent，我希望 `edit` 的每个 `oldText` 都对原文件匹配（而非逐步应用），并要求唯一、不重叠，以便结果确定。
+51. 作为 agent，我希望 `oldText` 精确匹配失败时，`edit` 用模糊匹配（Unicode 规范化、忽略行尾空白、智能引号/破折号/特殊空格归一）再试一次，以便我复制文本时的细微差异不导致失败。
+52. 作为 agent，我希望 `edit` 保留文件原有的换行风格（CRLF/LF）和 BOM，以便不产生无关 diff。
+53. 作为 agent，我希望 `edit` 在找不到、多处匹配、重叠、空 `oldText`、替换后无变化时分别给出明确、可操作的错误信息。
+54. 作为 agent，我希望 `edit` 宽容地接受旧式的顶层 `oldText`/`newText` 参数，或被序列化成字符串的 `edits`，以便不同模型的调用习惯都能成功。
+55. 作为 agent，我希望 `write` / `edit` 的目标在 project 文件夹范围之外时被拒绝并说明原因。
+56. 作为 runner 主人，我希望范围检查基于解析软链和 `..` 后的真实路径，以便 agent 无法借软链或相对路径逃逸。
+57. 作为 runner 主人，我希望写入一个尚不存在的文件时，范围检查基于其最近已存在祖先目录的真实路径，以便新建文件同样受约束。
+58. 作为 agent，我希望对同一文件的并发 `write` / `edit` 被依次执行，以便不会互相覆盖。
 
 ### 故障与可用性（agent）
 
-58. 作为 agent，我希望 runner 离线时，任何工具（包括 project 相关工具）立即返回 "runner offline" 错误，以便我不会傻等。
-59. 作为 agent，我希望 runner 离线时 MCP 端点本身仍能连接和列出工具，以便我的客户端配置不会因此报错。
-60. 作为 agent，我希望使用无效或已删除的 key 访问 MCP 地址时得到 404。
-61. 作为 agent，我希望工具调用在 runner 长时间无响应时超时并返回错误。
+59. 作为 agent，我希望 runner 离线时，任何工具（包括 project 相关工具）立即返回 "runner offline" 错误，以便我不会傻等。
+60. 作为 agent，我希望 runner 离线时 MCP 端点本身仍能连接和列出工具，以便我的客户端配置不会因此报错。
+61. 作为 agent，我希望使用无效或已删除的 key 访问 MCP 地址时得到 404。
+62. 作为 agent，我希望工具调用在 runner 长时间无响应时超时并返回错误。
 
 ### 演进
 
-62. 作为开发者，我希望以后加入 `bash` 工具时不需要修改 runner 与 server 之间的消息协议。
-63. 作为 agent，我希望用 `bash` 在当前 project 的主文件夹里执行命令（语义照搬 pi，输出截断除外：退出码 0 时输出不超过 30,000 字符则全部返回，否则只返回开头 2,000 字符；失败（非零退出码、超时、取消）时不超过 10,000 字符则全部返回，否则返回开头与末尾各 5,000 字符；截断时完整输出存入 runner 临时目录下的 `telehand/task-output/<9 位 CUID2>.output` 并给出路径，runner 启动时删除其中超过 3 天的文件；非零退出码为错误；可选超时，超时或取消时杀掉整个进程树）。
-64. 作为 agent，我希望 `bash` 最多同步等待 `wait` 秒（默认 50）：命令在此之前结束则直接返回结果，否则命令继续在 runner 上运行并返回任务 ID 与最新输出；我用 `bash_result(task_id, wait)` 继续等待并取回结果（结果取回后任务即清除），用 `bash_kill(task_id)` 杀掉它。这样单次 MCP 调用总是很短，不受客户端请求超时限制。
-65. 作为 runner 主人，我希望在 Windows 上 `bash` 依次使用 `TELEHAND_GIT_BASH_PATH`、`C:\Program Files\Git\bin\bash.exe`、PATH 中的 `bash.exe`；macOS/Linux 照 pi 使用 `/bin/bash`、PATH 中的 `bash`、最后 `sh`（`TELEHAND_GIT_BASH_PATH` 在所有平台优先）。
+63. 作为开发者，我希望以后加入 `bash` 工具时不需要修改 runner 与 server 之间的消息协议。
+64. 作为 agent，我希望用 `bash` 在当前 project 的主文件夹里执行命令（语义照搬 pi，输出截断除外：退出码 0 时输出不超过 30,000 字符则全部返回，否则只返回开头 2,000 字符；失败（非零退出码、超时、取消）时不超过 10,000 字符则全部返回，否则返回开头与末尾各 5,000 字符；截断时完整输出存入 runner 临时目录下的 `telehand/task-output/<9 位 CUID2>.output` 并给出路径，runner 启动时删除其中超过 3 天的文件；非零退出码为错误；可选超时，超时或取消时杀掉整个进程树）。
+65. 作为 agent，我希望 `bash` 最多同步等待 `wait` 秒（默认 50）：命令在此之前结束则直接返回结果，否则命令继续在 runner 上运行并返回任务 ID 与最新输出；我用 `bash_result(task_id, wait)` 继续等待并取回结果（结果取回后任务即清除），用 `bash_kill(task_id)` 杀掉它。这样单次 MCP 调用总是很短，不受客户端请求超时限制。
+66. 作为 runner 主人，我希望在 Windows 上 `bash` 依次使用 `TELEHAND_GIT_BASH_PATH`、`C:\Program Files\Git\bin\bash.exe`、PATH 中的 `bash.exe`；macOS/Linux 照 pi 使用 `/bin/bash`、PATH 中的 `bash`、最后 `sh`（`TELEHAND_GIT_BASH_PATH` 在所有平台优先）。
 
 ## Implementation Decisions
 
@@ -146,7 +147,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 ### CLI
 
 - server：`serve`（监听地址、数据目录）、`key create [--name]`（别名 `new`、`add`）、`key list`、`key remove <key>`（别名 `rm`）。
-- runner：`register <server_url> <key>`、`run`、`project add <dir> [--name <name>]`、`project folder add <name> <dir>`、`project list`、`project rename <name> <new_name>`、`project remove <name>`（别名 `rm`）。
+- runner：在终端里不带子命令运行时进入交互式菜单（注册、运行、项目管理；Esc 返回上一级，Ctrl-C 退出），菜单与子命令调用同一套逻辑；不在终端里时打印帮助。子命令：`register <server_url> <key>`、`run`、`project add <dir> [--name <name>]`、`project folder add <name> <dir>`、`project list`、`project rename <name> <new_name>`、`project remove <name>`（别名 `rm`）。
 - MCP 地址由注册时的 server_url 拼接 `/mcp/<key>` 得到。
 
 ## Testing Decisions

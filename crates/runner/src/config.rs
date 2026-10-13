@@ -88,7 +88,7 @@ impl RunnerConfig {
     }
 
     /// A name a new or renamed project may take: non-empty and unused.
-    fn check_new_name(&self, name: &str) -> anyhow::Result<()> {
+    pub fn check_new_name(&self, name: &str) -> anyhow::Result<()> {
         if name.trim().is_empty() {
             bail!("project name must not be empty");
         }

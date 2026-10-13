@@ -20,6 +20,7 @@ clap = { version = "4", features = ["derive", "env"] }
 cuid2 = "0.1"
 dirs = "6"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+inquire = "0.9"
 libc = "0.2"
 notify-debouncer-mini = "0.7"
 rmcp = { version = "3.5", default-features = false }
