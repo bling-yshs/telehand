@@ -1,10 +1,23 @@
-use std::{net::SocketAddr, path::PathBuf};
+use std::io::IsTerminal;
+use std::{
+    net::SocketAddr,
+    path::{Path, PathBuf},
+};
 
-use clap::{Parser, Subcommand};
-use telehand_server::{ServeOptions, admin};
+use clap::{CommandFactory, Parser, Subcommand};
+use telehand_server::{ServeOptions, admin, keys::Keys};
+
+mod menu;
+
+const DEFAULT_LISTEN: &str = "0.0.0.0:20250";
 
 #[derive(Parser)]
-#[command(name = "telehand-server", version, about = "Telehand server")]
+#[command(
+    name = "telehand-server",
+    version,
+    about = "Telehand server",
+    long_about = "Telehand server. Run without a command for an interactive menu."
+)]
 struct Cli {
     /// Directory holding keys.json and admin.sock.
     #[arg(
@@ -15,7 +28,7 @@ struct Cli {
     )]
     data_dir: PathBuf,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -23,7 +36,7 @@ enum Command {
     /// Run the server.
     Serve {
         /// Address to listen on.
-        #[arg(long, default_value = "0.0.0.0:20250")]
+        #[arg(long, default_value = DEFAULT_LISTEN)]
         listen: SocketAddr,
     },
     /// Manage keys.
@@ -58,40 +71,68 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let Cli { data_dir, command } = Cli::parse();
-    match command {
-        Command::Serve { listen } => {
-            let server = telehand_server::start(ServeOptions { listen, data_dir }).await?;
-            tracing::info!(addr = %server.addr, "listening");
-            let token = server.shutdown_token();
-            tokio::spawn(async move {
-                shutdown_signal().await;
-                token.cancel();
-            });
-            server.wait().await
+    let Some(command) = command else {
+        if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
+            return menu::run(&data_dir).await;
         }
+        // No one to answer the menu.
+        Cli::command().print_help()?;
+        std::process::exit(2);
+    };
+    match command {
+        Command::Serve { listen } => serve(&data_dir, listen).await,
         Command::Key { command } => match command {
-            KeyCommand::Create { name } => {
-                let key = admin::create_key(&data_dir, name).await?;
-                println!("{key}");
-                Ok(())
-            }
+            KeyCommand::Create { name } => create_key(&data_dir, name).await,
             KeyCommand::List => {
-                for (key, entry) in admin::list_keys(&data_dir).await? {
-                    println!(
-                        "{key}\t{}\tcreated_at={}",
-                        entry.name.as_deref().unwrap_or("-"),
-                        entry.created_at
-                    );
-                }
+                print_keys(&admin::list_keys(&data_dir).await?);
                 Ok(())
             }
-            KeyCommand::Remove { key } => {
-                admin::remove_key(&data_dir, &key).await?;
-                println!("Removed key {key}");
-                Ok(())
-            }
+            KeyCommand::Remove { key } => remove_key(&data_dir, &key).await,
         },
     }
+}
+
+// The commands, shared by the command line and the menu.
+
+/// Serve until Ctrl-C (or SIGTERM).
+async fn serve(data_dir: &Path, listen: SocketAddr) -> anyhow::Result<()> {
+    let server = telehand_server::start(ServeOptions {
+        listen,
+        data_dir: data_dir.to_path_buf(),
+    })
+    .await?;
+    tracing::info!(addr = %server.addr, "listening");
+    let token = server.shutdown_token();
+    let signal = tokio::spawn(async move {
+        shutdown_signal().await;
+        token.cancel();
+    });
+    let result = server.wait().await;
+    // The menu may serve again.
+    signal.abort();
+    result
+}
+
+async fn create_key(data_dir: &Path, name: Option<String>) -> anyhow::Result<()> {
+    let key = admin::create_key(data_dir, name).await?;
+    println!("{key}");
+    Ok(())
+}
+
+fn print_keys(keys: &Keys) {
+    for (key, entry) in keys {
+        println!(
+            "{key}\t{}\tcreated_at={}",
+            entry.name.as_deref().unwrap_or("-"),
+            entry.created_at
+        );
+    }
+}
+
+async fn remove_key(data_dir: &Path, key: &str) -> anyhow::Result<()> {
+    admin::remove_key(data_dir, key).await?;
+    println!("Removed key {key}");
+    Ok(())
 }
 
 /// Ctrl-C, or SIGTERM on Unix.
