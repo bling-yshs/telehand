@@ -28,7 +28,7 @@ const WRITE_DESCRIPTION: &str = "Write content to a file. Creates the file if it
 
 const EDIT_DESCRIPTION: &str = "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.";
 
-const BASH_DESCRIPTION: &str = "Execute a bash command in the current working directory.";
+const BASH_DESCRIPTION: &str = "Execute a bash command in the current working directory. This is bash: do not use PowerShell or cmd syntax.";
 
 const BASH_RESULT_DESCRIPTION: &str = "Wait for a bash command that was still running when bash returned. Waits up to `wait` seconds (default 50): returns the command's result if it finished, otherwise its latest output; call again to keep waiting.";
 
