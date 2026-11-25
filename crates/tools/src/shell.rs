@@ -7,11 +7,24 @@ pub const BASH_PATH_ENV: &str = "TELEHAND_GIT_BASH_PATH";
 
 const GIT_BASH: &str = r"C:\Program Files\Git\bin\bash.exe";
 
+/// The `-c` script for bash on Windows, which then gets the command on stdin.
+///
+/// A command passed as an argument goes through the Windows command line,
+/// which Rust quotes by MSVC rules, and the MSYS/Cygwin runtime parses it by
+/// its own: inside quotes `\\` becomes `\`, a word starting with a drive letter
+/// keeps its backslashes, unquoted words are globbed and `@file` is read.
+/// So the command is read from stdin instead, byte for byte, and run like
+/// `-c` would with stdin at `/dev/null`. This script has no backslashes, and
+/// its quotes survive both sets of rules.
+const STDIN_BOOTSTRAP: &str =
+    r#"IFS= read -r -d '' __telehand_command; exec </dev/null; eval "$__telehand_command""#;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellConfig {
     pub shell: PathBuf,
     pub args: Vec<&'static str>,
-    /// Pass the command on stdin instead of as an argument (WSL's legacy bash.exe).
+    /// Pass the command on stdin instead of as an argument: bash on Windows
+    /// (see [`STDIN_BOOTSTRAP`]) and WSL's legacy bash.exe.
     pub command_via_stdin: bool,
 }
 
@@ -20,6 +33,8 @@ pub struct ShellConfig {
 /// 1. `TELEHAND_GIT_BASH_PATH`, if set.
 /// 2. Windows: `C:\Program Files\Git\bin\bash.exe`, then `bash.exe` on PATH.
 /// 3. Elsewhere: `/bin/bash`, then `bash` on PATH, then `sh`.
+///
+/// On Windows the command goes to bash on stdin, not as an argument.
 pub fn shell_config() -> Result<ShellConfig, String> {
     let custom = std::env::var_os(BASH_PATH_ENV).filter(|value| !value.is_empty());
     resolve(custom.as_deref().map(Path::new))
@@ -66,6 +81,12 @@ fn bash_config(shell: &Path) -> ShellConfig {
         ShellConfig {
             shell: shell.to_path_buf(),
             args: vec!["-s"],
+            command_via_stdin: true,
+        }
+    } else if cfg!(windows) {
+        ShellConfig {
+            shell: shell.to_path_buf(),
+            args: vec!["-c", STDIN_BOOTSTRAP],
             command_via_stdin: true,
         }
     } else {
