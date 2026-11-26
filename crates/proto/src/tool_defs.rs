@@ -28,9 +28,9 @@ const WRITE_DESCRIPTION: &str = "Write content to a file. Creates the file if it
 
 const EDIT_DESCRIPTION: &str = "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.";
 
-const BASH_DESCRIPTION: &str = "Execute a bash command in the current working directory. This is bash: do not use PowerShell or cmd syntax.";
+const BASH_DESCRIPTION: &str = "Execute a bash command in the current working directory. This is bash: do not use PowerShell or cmd syntax. Returns stdout and stderr combined. Long output is truncated (on success, the first 2000 chars if over 30000; on failure, the first and last 5000 chars if over 10000) and saved in full to a file whose path is shown, so there is no need to redirect output to a file yourself. A command still running after `wait` seconds returns a task ID and its last 20 lines of output.";
 
-const BASH_RESULT_DESCRIPTION: &str = "Wait for a bash command that was still running when bash returned. Waits up to `wait` seconds (default 50): returns the command's result if it finished, otherwise its latest output; call again to keep waiting.";
+const BASH_RESULT_DESCRIPTION: &str = "Wait for a bash command that was still running when bash returned. Waits up to `wait` seconds (default 50): returns the command's result (truncated as in bash) if it finished, otherwise its last 20 lines of output so far, not just what is new since the last call; call again to keep waiting.";
 
 const GREP_DESCRIPTION: &str = "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.";
 
