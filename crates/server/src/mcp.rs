@@ -113,7 +113,8 @@ fn response_timeout(tool: &str, args: &Value) -> Duration {
     let wait = args
         .get("wait")
         .and_then(Value::as_f64)
-        .unwrap_or(tool_defs::BASH_DEFAULT_WAIT_SECONDS);
+        .unwrap_or(tool_defs::BASH_DEFAULT_WAIT_SECONDS)
+        .min(tool_defs::BASH_MAX_WAIT_SECONDS);
     Duration::try_from_secs_f64(wait)
         .ok()
         .and_then(|wait| wait.checked_add(BASH_REPORT_GRACE))

@@ -203,6 +203,7 @@ fn resolve_wait(seconds: Option<f64>) -> Result<Duration, String> {
     if !seconds.is_finite() || seconds < 0.0 {
         return Err("Invalid wait: must be a non-negative number of seconds".to_string());
     }
+    let seconds = seconds.min(telehand_proto::tool_defs::BASH_MAX_WAIT_SECONDS);
     Duration::try_from_secs_f64(seconds).map_err(|e| format!("Invalid wait: {e}"))
 }
 

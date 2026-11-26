@@ -21,6 +21,9 @@ pub const FIND: &str = "find";
 /// How long `bash` and `bash_result` wait for a command by default before
 /// returning while it keeps running.
 pub const BASH_DEFAULT_WAIT_SECONDS: f64 = 50.0;
+/// The longest `wait`; larger values are treated as this, so every call
+/// returns before an agent's request timeout and the task ID is not lost.
+pub const BASH_MAX_WAIT_SECONDS: f64 = 50.0;
 
 const READ_DESCRIPTION: &str = "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.";
 
@@ -30,7 +33,7 @@ const EDIT_DESCRIPTION: &str = "Edit a single file using exact text replacement.
 
 const BASH_DESCRIPTION: &str = "Execute a bash command in the current working directory. This is bash: do not use PowerShell or cmd syntax. Returns stdout and stderr combined. Long output is truncated (on success, the first 2000 chars if over 30000; on failure, the first and last 5000 chars if over 10000) and saved in full to a file whose path is shown, so there is no need to redirect output to a file yourself. A command still running after `wait` seconds returns a task ID and its last 20 lines of output.";
 
-const BASH_RESULT_DESCRIPTION: &str = "Wait for a bash command that was still running when bash returned. Waits up to `wait` seconds (default 50): returns the command's result (truncated as in bash) if it finished, otherwise its last 20 lines of output so far, not just what is new since the last call; call again to keep waiting.";
+const BASH_RESULT_DESCRIPTION: &str = "Wait for a bash command that was still running when bash returned. Waits up to `wait` seconds (default and maximum 50): returns the command's result (truncated as in bash) if it finished, otherwise its last 20 lines of output so far, not just what is new since the last call; call again to keep waiting.";
 
 const GREP_DESCRIPTION: &str = "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.";
 
@@ -108,7 +111,7 @@ pub fn runner_tools() -> Vec<ToolDef> {
                     },
                     "wait": {
                         "type": "number",
-                        "description": "Seconds to wait for the command to finish before returning a task ID (optional, default 50). The command keeps running either way."
+                        "description": "Seconds to wait for the command to finish before returning a task ID (optional, default and maximum 50; larger values are treated as 50). The command keeps running either way."
                     }
                 },
                 "required": ["command"]
@@ -126,7 +129,7 @@ pub fn runner_tools() -> Vec<ToolDef> {
                     },
                     "wait": {
                         "type": "number",
-                        "description": "Seconds to wait for the command to finish (optional, default 50)"
+                        "description": "Seconds to wait for the command to finish (optional, default and maximum 50; larger values are treated as 50)"
                     }
                 },
                 "required": ["task_id"]
