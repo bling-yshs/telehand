@@ -33,7 +33,7 @@ pub struct Project {
     pub extra_folders: Vec<PathBuf>,
 }
 
-/// Run `tool` with `args` in the context of `project` (`None`: the selected
+/// Run `tool` with `args` in the context of `project` (`None`: the requested
 /// project is not on this runner). Cancelling `cancel` means the caller gave
 /// up: a command still waited on is killed.
 pub async fn execute(

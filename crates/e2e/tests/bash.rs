@@ -15,7 +15,7 @@ async fn bash_runs_in_the_project() {
     client.wait_online().await;
 
     let error = client.err("bash", json!({"command": "pwd"})).await;
-    assert!(error.contains("No project selected"), "{error}");
+    assert!(error.contains("Missing required argument: project"), "{error}");
 
     client.use_project("demo");
     let out = client
