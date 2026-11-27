@@ -10,7 +10,7 @@ async fn large_files_are_paged_through_mcp() {
     let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
     let client = env.client().await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
 
     let first = client.ok("read", json!({"path": "big.txt"})).await;
     assert!(

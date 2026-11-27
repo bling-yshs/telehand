@@ -19,9 +19,6 @@ use crate::{mcp::McpHandler, store::KeyStore};
 
 pub const TOOL_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// How long an idle MCP session (and the project selected in it) is kept.
-pub const MCP_SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
-
 pub type McpService = StreamableHttpService<McpHandler, LocalSessionManager>;
 
 /// Something the connection task should send to its runner.
@@ -135,8 +132,7 @@ impl AppState {
             .map(|runner| runner.projects.clone())
     }
 
-    /// The MCP service for `key`, created on first use. `None` if the key is
-    /// unknown. Every MCP session gets a new handler with its own selection.
+    /// The MCP service for `key`, created on first use. `None` if the key is unknown.
     pub fn mcp_service(self: &Arc<Self>, key: &str) -> Option<McpService> {
         // Checked under the services lock, like `attach_runner`.
         let mut services = self.mcp_services.lock().unwrap();
@@ -144,13 +140,10 @@ impl AppState {
             return None;
         }
         let service = services.entry(key.to_string()).or_insert_with(|| {
-            let key = key.to_string();
-            let state = Arc::downgrade(self);
-            let mut sessions = LocalSessionManager::default();
-            sessions.session_config.keep_alive = Some(MCP_SESSION_IDLE_TIMEOUT);
+            let handler = McpHandler::new(key.to_string(), Arc::downgrade(self));
             StreamableHttpService::new(
-                move || Ok(McpHandler::new(key.clone(), state.clone())),
-                Arc::new(sessions),
+                move || Ok(handler.clone()),
+                Default::default(),
                 StreamableHttpServerConfig::default()
                     .disable_allowed_hosts()
                     .with_cancellation_token(self.shutdown.child_token()),

@@ -49,7 +49,7 @@ pub async fn execute(
         _ => {}
     }
     let Some(project) = project else {
-        return ToolOutput::error("The selected project does not exist on the runner.");
+        return ToolOutput::error("The project does not exist on the runner.");
     };
     match tool {
         tool_defs::READ => read::run(project, args).await,

@@ -1,7 +1,7 @@
 use telehand_e2e::{Env, json, mcp_status};
 
 #[tokio::test]
-async fn agent_selects_a_project_and_reads_files() {
+async fn agent_names_a_project_and_reads_files() {
     let env = Env::start().await;
     let demo = env.dir("demo");
     std::fs::create_dir_all(demo.join("src")).unwrap();
@@ -14,29 +14,27 @@ async fn agent_selects_a_project_and_reads_files() {
     client.wait_online().await;
 
     let tools = client.tool_names().await;
-    for name in ["list_project", "select_project", "current_project", "read"] {
+    for name in ["list_project", "read"] {
         assert!(
             tools.iter().any(|t| t == name),
             "missing tool {name}: {tools:?}"
         );
+    }
+    for name in ["select_project", "current_project"] {
+        assert!(!tools.iter().any(|t| t == name), "{name}: {tools:?}");
     }
 
     let list = client.ok("list_project", json!({})).await;
     assert!(list.contains("demo"), "{list}");
     assert!(list.contains(&*demo.to_string_lossy()), "{list}");
 
-    let none = client.ok("current_project", json!({})).await;
-    assert!(none.contains("No project selected"), "{none}");
-
-    let missing = client.err("select_project", json!({"name": "nope"})).await;
+    let missing = client
+        .err("read", json!({"project": "nope", "path": "src/main.rs"}))
+        .await;
     assert!(missing.contains("not found"), "{missing}");
+    assert!(missing.contains("Available projects: demo"), "{missing}");
 
-    client.ok("select_project", json!({"name": "demo"})).await;
-    let current = client.ok("current_project", json!({})).await;
-    assert!(current.contains("demo"), "{current}");
-    let list = client.ok("list_project", json!({})).await;
-    assert!(list.contains("(current)"), "{list}");
-
+    client.use_project("demo");
     let relative = client.ok("read", json!({"path": "src/main.rs"})).await;
     assert_eq!(relative, "fn main() {}\n");
 

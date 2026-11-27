@@ -3,13 +3,14 @@
 
 use std::{
     path::{Path, PathBuf},
+    sync::Mutex,
     time::Duration,
 };
 
 use rmcp::{
-    RoleClient, ServiceExt,
-    model::{CallToolRequestParams, CallToolResult, ClientConfig, ContentBlock},
-    service::RunningService,
+    RoleClient,
+    model::{CallToolRequestParams, CallToolResult, ClientConfig, ContentBlock, ProtocolVersion},
+    service::{ClientLifecycleMode, ClientServiceExt, RunningService},
     transport::{
         StreamableHttpClientTransport, streamable_http_client::StreamableHttpClientTransportConfig,
     },
@@ -166,32 +167,65 @@ impl Runner {
 
 pub struct Client {
     service: RunningService<RoleClient, ClientConfig>,
+    /// Passed as the `project` argument of the tools that take one, unless
+    /// the call names a project itself.
+    project: Mutex<Option<String>>,
 }
 
+/// Tools that take no `project` argument.
+const TOOLS_WITHOUT_PROJECT: [&str; 3] = ["list_project", "bash_result", "bash_kill"];
+
 impl Client {
+    /// Connect with the stateless MCP protocol (2026-07-28), like current
+    /// Claude Code: no `initialize`, no session.
     pub async fn connect(url: &str) -> Client {
         let transport = StreamableHttpClientTransport::from_config(
             StreamableHttpClientTransportConfig::with_uri(url.to_string()),
         );
-        let service = ClientConfig::default().serve(transport).await.unwrap();
-        Client { service }
+        let service = ClientConfig::default()
+            .serve_with_lifecycle(
+                transport,
+                ClientLifecycleMode::Discover {
+                    preferred_versions: vec![ProtocolVersion::V_2026_07_28],
+                },
+            )
+            .await
+            .unwrap();
+        Client {
+            service,
+            project: Mutex::new(None),
+        }
+    }
+
+    /// Pass `name` as the `project` argument of later calls.
+    pub fn use_project(&self, name: &str) {
+        *self.project.lock().unwrap() = Some(name.to_string());
+    }
+
+    pub async fn tools(&self) -> Vec<rmcp::model::Tool> {
+        self.service.list_all_tools().await.unwrap()
     }
 
     pub async fn tool_names(&self) -> Vec<String> {
-        self.service
-            .list_all_tools()
+        self.tools()
             .await
-            .unwrap()
             .into_iter()
             .map(|tool| tool.name.to_string())
             .collect()
     }
 
     pub async fn call(&self, tool: &str, args: Value) -> CallToolResult {
-        let args = match args {
+        let mut args = match args {
             Value::Object(map) => map,
             _ => panic!("tool arguments must be an object"),
         };
+        let project = self.project.lock().unwrap().clone();
+        if let Some(project) = project
+            && !TOOLS_WITHOUT_PROJECT.contains(&tool)
+            && !args.contains_key("project")
+        {
+            args.insert("project".to_string(), Value::String(project));
+        }
         self.service
             .call_tool(CallToolRequestParams::new(tool.to_string()).with_arguments(args))
             .await

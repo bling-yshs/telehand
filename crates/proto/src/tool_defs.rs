@@ -41,7 +41,7 @@ const FIND_DESCRIPTION: &str = "Search for files by glob pattern. Returns matchi
 
 const BASH_KILL_DESCRIPTION: &str = "Stop a running bash command by its task ID, killing it and every process it started, and return its output.";
 
-/// The tools that run on the runner, in the context of the current project.
+/// The tools that run on the runner, in the context of a project.
 pub fn runner_tools() -> Vec<ToolDef> {
     vec![
         read_def(),

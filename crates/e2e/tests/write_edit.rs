@@ -10,7 +10,7 @@ async fn write_is_limited_to_project_folders() {
     let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
     let client = env.client().await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
 
     let wrote = client
         .ok(
@@ -60,7 +60,7 @@ async fn edit_applies_multiple_and_fuzzy_replacements() {
     let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
     let client = env.client().await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
 
     let edited = client
         .ok(
@@ -111,7 +111,7 @@ async fn symlinks_cannot_escape_the_project() {
     let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
     let client = env.client().await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
 
     for (tool, args) in [
         ("write", json!({"path": "link-file", "content": "x"})),

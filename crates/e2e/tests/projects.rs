@@ -16,7 +16,7 @@ async fn extra_folders_extend_the_write_scope_after_restart() {
     let runner = env.start_runner(config.clone());
     let client = env.client().await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
     let denied = client.err("write", args.clone()).await;
     assert!(denied.starts_with("Permission denied"), "{denied}");
     runner.stop().await;
@@ -26,10 +26,9 @@ async fn extra_folders_extend_the_write_scope_after_restart() {
     config.add_folder("demo", &shared).unwrap();
     let runner = env.start_runner(config);
     client.wait_online().await;
-    let current = client.ok("current_project", json!({})).await;
-    assert!(current.contains(&*shared.to_string_lossy()), "{current}");
     let list = client.ok("list_project", json!({})).await;
     assert!(list.contains("extra folders"), "{list}");
+    assert!(list.contains(&*shared.to_string_lossy()), "{list}");
 
     client.ok("write", args).await;
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "x = 1\n");
@@ -58,19 +57,19 @@ async fn project_changes_take_effect_without_restarting_the_runner() {
     config.add_project(&other, Some("other")).unwrap();
     config.save(&path).unwrap();
     wait_for_list(&client, |list| list.contains("other")).await;
-    client.ok("select_project", json!({"name": "other"})).await;
+    client.use_project("other");
     client
         .ok("write", json!({"path": "new.txt", "content": "x"}))
         .await;
     assert!(other.join("new.txt").exists());
 
-    // Removed: the selection no longer resolves.
+    // Removed: the project name no longer resolves.
     let mut config = RunnerConfig::load(&path).unwrap();
     config.remove_project("other").unwrap();
     config.save(&path).unwrap();
     wait_for_list(&client, |list| !list.contains("other")).await;
     let err = client.err("read", json!({"path": "new.txt"})).await;
-    assert!(err.contains("no longer exists"), "{err}");
+    assert!(err.contains("Project 'other' not found"), "{err}");
 
     // A config that fails to load keeps the previous projects.
     std::fs::write(&path, "{ not json").unwrap();

@@ -10,17 +10,15 @@ async fn every_tool_fails_fast_after_the_runner_disconnects() {
     let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
     let client = env.client().await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
     runner.stop().await;
     client.wait_offline().await;
 
     let tools = client.tool_names().await;
-    assert_eq!(tools.len(), 11, "{tools:?}");
+    assert_eq!(tools.len(), 9, "{tools:?}");
 
     for (tool, args) in [
         ("list_project", json!({})),
-        ("select_project", json!({"name": "demo"})),
-        ("current_project", json!({})),
         ("read", json!({"path": "a.txt"})),
         ("write", json!({"path": "a.txt", "content": "x"})),
         (
@@ -78,13 +76,11 @@ async fn the_runner_reconnects_after_the_server_restarts() {
     let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
     let client = env.client().await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
 
     env.restart_server_same_port().await;
     let client = env.client().await;
     client.wait_online().await;
-    // A new MCP session starts without a selection.
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
     assert_eq!(
         client.ok("read", json!({"path": "a.txt"})).await,
         "still here"

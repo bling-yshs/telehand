@@ -49,7 +49,7 @@ pub fn check_writable(project: &Project, target: &Path) -> Result<PathBuf, Strin
     } else {
         let folders: Vec<String> = folders.iter().map(|f| f.display().to_string()).collect();
         Err(format!(
-            "Permission denied: {} is outside the current project's folders ({}). write and edit may only modify files inside these folders.",
+            "Permission denied: {} is outside the project's folders ({}). write and edit may only modify files inside these folders.",
             target.display(),
             folders.join(", ")
         ))

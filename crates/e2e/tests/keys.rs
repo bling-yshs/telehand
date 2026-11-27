@@ -2,7 +2,7 @@
 use std::time::Duration;
 
 #[cfg(unix)]
-use telehand_e2e::{Client, Env, json, mcp_status};
+use telehand_e2e::{Client, Env, mcp_status};
 #[cfg(unix)]
 use telehand_runner::{RunExit, RunnerConfig};
 use telehand_server::{admin, keys};
@@ -29,7 +29,6 @@ async fn keys_created_while_running_work_and_survive_persistence() {
     let runner = env.start_runner(config);
     let client = Client::connect(&telehand_proto::mcp_url(&env.server_url, &new_key)).await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
 
     // Once the server writes keys.json, the new key is in it (not overwritten).
     tokio::time::sleep(Duration::from_millis(500)).await;

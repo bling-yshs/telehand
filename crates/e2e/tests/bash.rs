@@ -5,7 +5,7 @@ use telehand_e2e::{Env, json};
 // `pwd` prints MSYS-style paths under Git Bash on Windows.
 #[cfg(unix)]
 #[tokio::test]
-async fn bash_runs_in_the_current_project() {
+async fn bash_runs_in_the_project() {
     let env = Env::start().await;
     let demo = env.dir("demo");
     std::fs::write(demo.join("a.txt"), "hello").unwrap();
@@ -17,7 +17,7 @@ async fn bash_runs_in_the_current_project() {
     let error = client.err("bash", json!({"command": "pwd"})).await;
     assert!(error.contains("No project selected"), "{error}");
 
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
     let out = client
         .ok("bash", json!({"command": "pwd && cat a.txt"}))
         .await;
@@ -38,7 +38,7 @@ async fn command_timeouts_kill_the_command_end_to_end() {
     let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
     let client = env.client().await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
 
     let started = Instant::now();
     let error = client
@@ -57,7 +57,7 @@ async fn slow_commands_survive_a_reconnect_as_tasks() {
     let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
     let client = env.client().await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
 
     let started = client
         .ok(

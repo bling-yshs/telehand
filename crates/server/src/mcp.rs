@@ -1,12 +1,11 @@
 //! The MCP server exposed to agents at `/mcp/{key}`.
 //!
-//! Each MCP session gets its own [`McpHandler`], which holds that session's
-//! current project: agents sharing one MCP URL select projects independently.
+//! The server keeps no current project: every tool that works in a project
+//! names it in its `project` argument, so agents sharing one MCP URL (and
+//! clients of the stateless MCP protocol, which have no session) never affect
+//! each other.
 
-use std::{
-    sync::{Arc, Mutex, Weak},
-    time::Duration,
-};
+use std::{sync::Weak, time::Duration};
 
 use rmcp::{
     ErrorData, RoleServer, ServerHandler,
@@ -27,8 +26,9 @@ use crate::state::{AppState, CallError, TOOL_TIMEOUT};
 const BASH_REPORT_GRACE: Duration = Duration::from_secs(30);
 
 pub const LIST_PROJECT: &str = "list_project";
-pub const SELECT_PROJECT: &str = "select_project";
-pub const CURRENT_PROJECT: &str = "current_project";
+
+/// The argument naming the project a tool works in.
+const PROJECT_ARG: &str = "project";
 
 pub const RUNNER_OFFLINE: &str = "Runner offline: no runner is connected for this key. Start `telehand-runner run` on the runner machine.";
 
@@ -36,22 +36,11 @@ pub const RUNNER_OFFLINE: &str = "Runner offline: no runner is connected for thi
 pub struct McpHandler {
     key: String,
     state: Weak<AppState>,
-    /// The project selected in this MCP session.
-    current: Arc<Mutex<Option<String>>>,
 }
 
 impl McpHandler {
-    /// A handler for a new MCP session, with no project selected.
     pub fn new(key: String, state: Weak<AppState>) -> Self {
-        Self {
-            key,
-            state,
-            current: Arc::default(),
-        }
-    }
-
-    fn current(&self) -> Option<String> {
-        self.current.lock().unwrap().clone()
+        Self { key, state }
     }
 }
 
@@ -63,35 +52,41 @@ fn schema(value: Value) -> JsonObject {
 }
 
 fn tools() -> Vec<Tool> {
-    let mut tools = vec![
-        Tool::new(
-            LIST_PROJECT,
-            "List the projects registered on the runner, with their main folder and extra folders, and mark the current project. The read, write, edit, bash, grep and find tools operate on the current project: relative paths resolve against its main folder, write/edit may only modify files inside its folders, and bash runs commands in its main folder.",
-            schema(json!({"type": "object", "properties": {}})),
-        ),
-        Tool::new(
-            SELECT_PROJECT,
-            "Select the current project by name. read, write, edit, bash, grep and find operate on the current project until another one is selected. The selection belongs to this MCP session: other agents using the same MCP URL keep their own.",
-            schema(json!({
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string", "description": "Name of the project to select"}
-                },
-                "required": ["name"]
-            })),
-        ),
-        Tool::new(
-            CURRENT_PROJECT,
-            "Show the current project: its name, main folder (base for relative paths and working directory of bash) and extra folders.",
-            schema(json!({"type": "object", "properties": {}})),
-        ),
-    ];
-    tools.extend(
-        tool_defs::runner_tools()
-            .into_iter()
-            .map(|def| Tool::new(def.name, def.description, schema(def.input_schema))),
-    );
+    let mut tools = vec![Tool::new(
+        LIST_PROJECT,
+        "List the projects registered on the runner, with their main folder and extra folders. read, write, edit, bash, grep and find take the name of the project to work in as their `project` argument: relative paths resolve against its main folder, write/edit may only modify files inside its folders, and bash runs commands in its main folder.",
+        schema(json!({"type": "object", "properties": {}})),
+    )];
+    tools.extend(tool_defs::runner_tools().into_iter().map(|def| {
+        let mut input_schema = def.input_schema;
+        if !is_task_tool(def.name) {
+            add_project_arg(&mut input_schema);
+        }
+        Tool::new(def.name, def.description, schema(input_schema))
+    }));
     tools
+}
+
+/// Add the required `project` argument to a runner tool's input schema.
+fn add_project_arg(input_schema: &mut Value) {
+    if let Some(properties) = input_schema
+        .get_mut("properties")
+        .and_then(Value::as_object_mut)
+    {
+        properties.insert(
+            PROJECT_ARG.to_string(),
+            json!({
+                "type": "string",
+                "description": "Name of the project to work in (see list_project)"
+            }),
+        );
+    }
+    if let Some(required) = input_schema
+        .get_mut("required")
+        .and_then(Value::as_array_mut)
+    {
+        required.insert(0, json!(PROJECT_ARG));
+    }
 }
 
 fn to_result(output: ToolOutput) -> CallToolResult {
@@ -138,20 +133,30 @@ fn response_timeout(tool: &str, args: &Value) -> Duration {
         .unwrap_or(TOOL_TIMEOUT)
 }
 
-/// Tools about commands that already run, which need no selected project.
+/// Tools about commands that already run, which take no project.
 fn is_task_tool(tool: &str) -> bool {
     tool == tool_defs::BASH_RESULT || tool == tool_defs::BASH_KILL
 }
 
-const NO_PROJECT_SELECTED: &str = "No project selected in this MCP session (it may be a new session, or the server restarted or the session expired). Use list_project to see the available projects, then select_project to choose one.";
-
-fn no_project_selected() -> ToolOutput {
-    ToolOutput::error(NO_PROJECT_SELECTED)
+fn available(projects: &[ProjectInfo]) -> String {
+    if projects.is_empty() {
+        return "(none)".to_string();
+    }
+    let names: Vec<&str> = projects.iter().map(|p| p.name.as_str()).collect();
+    names.join(", ")
 }
 
-fn project_missing(name: &str) -> ToolOutput {
+fn project_arg_missing(projects: &[ProjectInfo]) -> ToolOutput {
     ToolOutput::error(format!(
-        "The selected project '{name}' no longer exists on the runner. Use list_project to see the available projects, then select_project to choose one."
+        "Missing required argument: project. Pass the name of the project to work in. Available projects: {}",
+        available(projects)
+    ))
+}
+
+fn project_not_found(name: &str, projects: &[ProjectInfo]) -> ToolOutput {
+    ToolOutput::error(format!(
+        "Project '{name}' not found on the runner. Available projects: {}",
+        available(projects)
     ))
 }
 
@@ -165,77 +170,39 @@ impl McpHandler {
                 "No projects are registered on the runner. Add one on the runner machine with `telehand-runner project add <dir>`.",
             );
         }
-        let current = self.current();
         let lines: Vec<String> = projects
             .iter()
-            .map(|p| {
-                let marker = if current.as_deref() == Some(p.name.as_str()) {
-                    " (current)"
-                } else {
-                    ""
-                };
-                format!("- {}{marker}", describe(p))
-            })
+            .map(|p| format!("- {}", describe(p)))
             .collect();
         ToolOutput::text(lines.join("\n"))
-    }
-
-    fn select_project(&self, state: &AppState, args: &Value) -> ToolOutput {
-        let Some(projects) = state.runner_projects(&self.key) else {
-            return ToolOutput::error(RUNNER_OFFLINE);
-        };
-        let Some(name) = args.get("name").and_then(Value::as_str) else {
-            return ToolOutput::error("Missing required argument: name");
-        };
-        let Some(project) = projects.iter().find(|p| p.name == name) else {
-            let available: Vec<&str> = projects.iter().map(|p| p.name.as_str()).collect();
-            return ToolOutput::error(format!(
-                "Project '{name}' not found. Available projects: {}",
-                if available.is_empty() {
-                    "(none)".to_string()
-                } else {
-                    available.join(", ")
-                }
-            ));
-        };
-        *self.current.lock().unwrap() = Some(name.to_string());
-        ToolOutput::text(format!("Selected project {}", describe(project)))
-    }
-
-    fn current_project(&self, state: &AppState) -> ToolOutput {
-        let Some(projects) = state.runner_projects(&self.key) else {
-            return ToolOutput::error(RUNNER_OFFLINE);
-        };
-        let Some(current) = self.current() else {
-            return ToolOutput::text(NO_PROJECT_SELECTED);
-        };
-        match projects.iter().find(|p| p.name == current) {
-            Some(project) => ToolOutput::text(format!("Current project: {}", describe(project))),
-            None => project_missing(&current),
-        }
     }
 
     async fn runner_tool(
         &self,
         state: &AppState,
         tool: &str,
-        args: Value,
+        mut args: Value,
         cancel: &CancellationToken,
     ) -> ToolOutput {
         let Some(projects) = state.runner_projects(&self.key) else {
             return ToolOutput::error(RUNNER_OFFLINE);
         };
-        let current = self.current();
-        if !is_task_tool(tool) {
-            let Some(current) = &current else {
-                return no_project_selected();
+        // The project travels in the request, not in the tool's arguments.
+        let project = args
+            .as_object_mut()
+            .and_then(|args| args.remove(PROJECT_ARG));
+        let project = if is_task_tool(tool) {
+            String::new()
+        } else {
+            let Some(name) = project.as_ref().and_then(Value::as_str) else {
+                return project_arg_missing(&projects);
             };
-            if !projects.iter().any(|p| &p.name == current) {
-                return project_missing(current);
+            if !projects.iter().any(|p| p.name == name) {
+                return project_not_found(name, &projects);
             }
-        }
+            name.to_string()
+        };
         let timeout = response_timeout(tool, &args);
-        let project = current.unwrap_or_default();
         match state
             .call_runner(&self.key, &project, tool, args, Some(timeout), cancel)
             .await
@@ -278,8 +245,6 @@ impl ServerHandler for McpHandler {
         let args = Value::Object(request.arguments.unwrap_or_default());
         let output = match request.name.as_ref() {
             LIST_PROJECT => self.list_project(&state),
-            SELECT_PROJECT => self.select_project(&state, &args),
-            CURRENT_PROJECT => self.current_project(&state),
             name if tool_defs::runner_tools().iter().any(|def| def.name == name) => {
                 self.runner_tool(&state, name, args, &context.ct).await
             }

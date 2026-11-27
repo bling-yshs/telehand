@@ -18,7 +18,7 @@ async fn reading_a_png_returns_image_content() {
     let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
     let client = env.client().await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
 
     let result = client.call("read", json!({"path": "pic.png"})).await;
     assert_ne!(result.is_error, Some(true));

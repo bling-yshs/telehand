@@ -12,7 +12,7 @@ async fn project_with_files(env: &Env) -> (Runner, Client) {
     let runner = env.start_runner(env.runner_config(&[("demo", &demo)]));
     let client = env.client().await;
     client.wait_online().await;
-    client.ok("select_project", json!({"name": "demo"})).await;
+    client.use_project("demo");
     (runner, client)
 }
 
