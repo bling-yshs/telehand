@@ -4,13 +4,13 @@
 
 **Blocked by:** 07
 
-**Status:** in progress
+**Status:** done
 
-- [ ] server 为需要 project 的工具在 schema 上追加必填 `project`；校验后从参数中取出，放进 WebSocket 请求的 project 字段转发，runner 与工具模块不变
-- [ ] 漏填或填错 `project` 时报错并列出可用 project
-- [ ] 去掉 `select_project` / `current_project`；`list_project` 不再标记当前 project
-- [ ] `bash_result` / `bash_kill` 不带 `project`，后台任务按 runner 共享
-- [ ] 状态文件去掉 current_project 字段；含该字段的旧文件仍能加载
-- [ ] e2e 测试客户端改用无状态的 2026-07-28 协议（与 Claude Code 一致）
-- [ ] 端到端测试覆盖：同一地址两个客户端交替操作不同 project；漏填 / 填错 project 报错；schema 中 project 必填
-- [ ] 更新 spec
+- [x] server 为需要 project 的工具在 schema 上追加必填 `project`；校验后从参数中取出，放进 WebSocket 请求的 project 字段转发，runner 与工具模块不变
+- [x] 漏填或填错 `project` 时报错并列出可用 project
+- [x] 去掉 `select_project` / `current_project`；`list_project` 不再标记当前 project
+- [x] `bash_result` / `bash_kill` 不带 `project`，后台任务按 runner 共享
+- [x] 状态文件去掉 current_project 字段；含该字段的旧文件仍能加载
+- [x] e2e 测试客户端改用无状态的 2026-07-28 协议（与 Claude Code 一致）
+- [x] 端到端测试覆盖：同一地址两个客户端交替操作不同 project；漏填 / 填错 project 报错；schema 中 project 必填
+- [x] 更新 spec
