@@ -4,12 +4,12 @@
 
 **Blocked by:** 07
 
-**Status:** in progress
+**Status:** done
 
-- [ ] 每个 MCP 会话一个 handler，`list_project` / `select_project` / `current_project` 与文件工具只看本会话的选择
-- [ ] 会话空闲超时从 SDK 默认的 5 分钟调到 24 小时
-- [ ] 未选择时的报错说明可能原因（新会话、server 重启、会话过期）并提示 list/select
-- [ ] 状态文件去掉 current_project 字段；含该字段的旧文件仍能加载
-- [ ] bash 后台任务仍按 runner 共享；同一进程内（subagent、清空对话）共享会话即共享选择
-- [ ] 端到端测试覆盖：同一地址两个会话各选各的；server 重启后新会话未选择；runner 重连后会话选择保留
-- [ ] 更新 spec（#38、#40、MCP 决策、非目标、风险说明）
+- [x] 每个 MCP 会话一个 handler，`list_project` / `select_project` / `current_project` 与文件工具只看本会话的选择
+- [x] 会话空闲超时从 SDK 默认的 5 分钟调到 24 小时
+- [x] 未选择时的报错说明可能原因（新会话、server 重启、会话过期）并提示 list/select
+- [x] 状态文件去掉 current_project 字段；含该字段的旧文件仍能加载
+- [x] bash 后台任务仍按 runner 共享；同一进程内（subagent、清空对话）共享会话即共享选择
+- [x] 端到端测试覆盖：同一地址两个会话各选各的；server 重启后新会话未选择；runner 重连后会话选择保留
+- [x] 更新 spec（#38、#40、MCP 决策、非目标、风险说明）
