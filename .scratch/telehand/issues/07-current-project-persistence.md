@@ -4,7 +4,7 @@
 
 **Blocked by:** 01
 
-**Status:** done
+**Status:** done; superseded by 10 (the current project is now per MCP session and no longer persisted)
 
 - [x] 状态文件结构：以 key 为键，值含备注名、创建时间、当前 project（可空）
 - [x] `select_project` 更新内存并触发延迟写盘；连续变更只在最后一次变更 100ms 后写盘一次

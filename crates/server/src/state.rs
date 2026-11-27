@@ -19,6 +19,9 @@ use crate::{mcp::McpHandler, store::KeyStore};
 
 pub const TOOL_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How long an idle MCP session (and the project selected in it) is kept.
+pub const MCP_SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
+
 pub type McpService = StreamableHttpService<McpHandler, LocalSessionManager>;
 
 /// Something the connection task should send to its runner.
@@ -74,21 +77,6 @@ impl AppState {
 
     pub fn key_exists(&self, key: &str) -> bool {
         self.keys.read(|keys| keys.contains_key(key))
-    }
-
-    pub fn current_project(&self, key: &str) -> Option<String> {
-        self.keys.read(|keys| {
-            keys.get(key)
-                .and_then(|entry| entry.current_project.clone())
-        })
-    }
-
-    pub fn set_current_project(&self, key: &str, project: &str) {
-        self.keys.update(|keys| {
-            if let Some(entry) = keys.get_mut(key) {
-                entry.current_project = Some(project.to_string());
-            }
-        });
     }
 
     pub fn create_key(&self, name: Option<String>) -> String {
@@ -147,7 +135,8 @@ impl AppState {
             .map(|runner| runner.projects.clone())
     }
 
-    /// The MCP service for `key`, created on first use. `None` if the key is unknown.
+    /// The MCP service for `key`, created on first use. `None` if the key is
+    /// unknown. Every MCP session gets a new handler with its own selection.
     pub fn mcp_service(self: &Arc<Self>, key: &str) -> Option<McpService> {
         // Checked under the services lock, like `attach_runner`.
         let mut services = self.mcp_services.lock().unwrap();
@@ -155,10 +144,13 @@ impl AppState {
             return None;
         }
         let service = services.entry(key.to_string()).or_insert_with(|| {
-            let handler = McpHandler::new(key.to_string(), Arc::downgrade(self));
+            let key = key.to_string();
+            let state = Arc::downgrade(self);
+            let mut sessions = LocalSessionManager::default();
+            sessions.session_config.keep_alive = Some(MCP_SESSION_IDLE_TIMEOUT);
             StreamableHttpService::new(
-                move || Ok(handler.clone()),
-                Default::default(),
+                move || Ok(McpHandler::new(key.clone(), state.clone())),
+                Arc::new(sessions),
                 StreamableHttpServerConfig::default()
                     .disable_allowed_hosts()
                     .with_cancellation_token(self.shutdown.child_token()),

@@ -1,6 +1,12 @@
 //! The MCP server exposed to agents at `/mcp/{key}`.
+//!
+//! Each MCP session gets its own [`McpHandler`], which holds that session's
+//! current project: agents sharing one MCP URL select projects independently.
 
-use std::{sync::Weak, time::Duration};
+use std::{
+    sync::{Arc, Mutex, Weak},
+    time::Duration,
+};
 
 use rmcp::{
     ErrorData, RoleServer, ServerHandler,
@@ -30,11 +36,22 @@ pub const RUNNER_OFFLINE: &str = "Runner offline: no runner is connected for thi
 pub struct McpHandler {
     key: String,
     state: Weak<AppState>,
+    /// The project selected in this MCP session.
+    current: Arc<Mutex<Option<String>>>,
 }
 
 impl McpHandler {
+    /// A handler for a new MCP session, with no project selected.
     pub fn new(key: String, state: Weak<AppState>) -> Self {
-        Self { key, state }
+        Self {
+            key,
+            state,
+            current: Arc::default(),
+        }
+    }
+
+    fn current(&self) -> Option<String> {
+        self.current.lock().unwrap().clone()
     }
 }
 
@@ -54,7 +71,7 @@ fn tools() -> Vec<Tool> {
         ),
         Tool::new(
             SELECT_PROJECT,
-            "Select the current project by name. read, write, edit, bash, grep and find operate on the current project until another one is selected. The selection is shared by every agent using this MCP URL.",
+            "Select the current project by name. read, write, edit, bash, grep and find operate on the current project until another one is selected. The selection belongs to this MCP session: other agents using the same MCP URL keep their own.",
             schema(json!({
                 "type": "object",
                 "properties": {
@@ -126,10 +143,10 @@ fn is_task_tool(tool: &str) -> bool {
     tool == tool_defs::BASH_RESULT || tool == tool_defs::BASH_KILL
 }
 
+const NO_PROJECT_SELECTED: &str = "No project selected in this MCP session (it may be a new session, or the server restarted or the session expired). Use list_project to see the available projects, then select_project to choose one.";
+
 fn no_project_selected() -> ToolOutput {
-    ToolOutput::error(
-        "No project selected. Use list_project to see the available projects, then select_project to choose one.",
-    )
+    ToolOutput::error(NO_PROJECT_SELECTED)
 }
 
 fn project_missing(name: &str) -> ToolOutput {
@@ -148,7 +165,7 @@ impl McpHandler {
                 "No projects are registered on the runner. Add one on the runner machine with `telehand-runner project add <dir>`.",
             );
         }
-        let current = state.current_project(&self.key);
+        let current = self.current();
         let lines: Vec<String> = projects
             .iter()
             .map(|p| {
@@ -181,7 +198,7 @@ impl McpHandler {
                 }
             ));
         };
-        state.set_current_project(&self.key, name);
+        *self.current.lock().unwrap() = Some(name.to_string());
         ToolOutput::text(format!("Selected project {}", describe(project)))
     }
 
@@ -189,10 +206,8 @@ impl McpHandler {
         let Some(projects) = state.runner_projects(&self.key) else {
             return ToolOutput::error(RUNNER_OFFLINE);
         };
-        let Some(current) = state.current_project(&self.key) else {
-            return ToolOutput::text(
-                "No project selected. Use list_project to see the available projects, then select_project to choose one.",
-            );
+        let Some(current) = self.current() else {
+            return ToolOutput::text(NO_PROJECT_SELECTED);
         };
         match projects.iter().find(|p| p.name == current) {
             Some(project) => ToolOutput::text(format!("Current project: {}", describe(project))),
@@ -210,7 +225,7 @@ impl McpHandler {
         let Some(projects) = state.runner_projects(&self.key) else {
             return ToolOutput::error(RUNNER_OFFLINE);
         };
-        let current = state.current_project(&self.key);
+        let current = self.current();
         if !is_task_tool(tool) {
             let Some(current) = &current else {
                 return no_project_selected();

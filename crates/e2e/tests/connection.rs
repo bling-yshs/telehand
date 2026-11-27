@@ -83,6 +83,8 @@ async fn the_runner_reconnects_after_the_server_restarts() {
     env.restart_server_same_port().await;
     let client = env.client().await;
     client.wait_online().await;
+    // A new MCP session starts without a selection.
+    client.ok("select_project", json!({"name": "demo"})).await;
     assert_eq!(
         client.ok("read", json!({"path": "a.txt"})).await,
         "still here"

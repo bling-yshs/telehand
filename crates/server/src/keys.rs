@@ -15,8 +15,6 @@ pub struct KeyEntry {
     pub name: Option<String>,
     /// Unix timestamp in seconds.
     pub created_at: u64,
-    #[serde(default)]
-    pub current_project: Option<String>,
 }
 
 pub type Keys = BTreeMap<String, KeyEntry>;
@@ -54,11 +52,7 @@ pub fn new_entry(name: Option<String>) -> (String, KeyEntry) {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let entry = KeyEntry {
-        name,
-        created_at,
-        current_project: None,
-    };
+    let entry = KeyEntry { name, created_at };
     (uuid::Uuid::new_v4().to_string(), entry)
 }
 
@@ -85,6 +79,19 @@ mod tests {
         assert_eq!(keys[&a].name.as_deref(), Some("laptop"));
         assert!(keys.contains_key(&b));
         assert!(uuid::Uuid::parse_str(&a).is_ok());
+    }
+
+    #[test]
+    fn stores_with_a_saved_current_project_still_load() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            keys_path(dir.path()),
+            r#"{"k": {"name": "laptop", "created_at": 1, "current_project": "demo"}}"#,
+        )
+        .unwrap();
+        let keys = load(dir.path()).unwrap();
+        assert_eq!(keys["k"].name.as_deref(), Some("laptop"));
+        assert_eq!(keys["k"].created_at, 1);
     }
 
     #[test]

@@ -34,7 +34,7 @@ async fn keys_created_while_running_work_and_survive_persistence() {
     // Once the server writes keys.json, the new key is in it (not overwritten).
     tokio::time::sleep(Duration::from_millis(500)).await;
     let stored = keys::load(&env.data_dir).unwrap();
-    assert_eq!(stored[&new_key].current_project.as_deref(), Some("demo"));
+    assert_eq!(stored[&new_key].name.as_deref(), Some("laptop"));
     assert!(stored.contains_key(&env.key));
 
     runner.stop().await;

@@ -63,9 +63,9 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 35. 作为 agent，我希望用 `select_project(name)` 切换当前 project，以便之后的文件操作都作用于它。
 36. 作为 agent，我希望选择一个不存在的 project 时得到明确错误。
 37. 作为 agent，我希望用 `current_project` 查看当前 project 详情，以便确认工作目录和可写范围。
-38. 作为 agent，我希望当前 project 的选择在 server 重启、runner 重连后依然保留，以便不必每次重新选择。
+38. 作为 agent，我希望当前 project 的选择在 runner 重连后依然保留，以便不必每次重新选择；server 重启或 MCP 会话结束（空闲超过 24 小时）后需要重新选择。
 39. 作为 agent，我希望在还没有选择 project（或选择的 project 已被删除）时调用文件工具，得到提示我先 `list_project` / `select_project` 的错误。
-40. 作为使用同一个 MCP 地址的多个 agent 会话的用户，我理解当前 project 是挂在 key 上全局共享的，一个会话切换会影响其他会话。
+40. 作为在同一个文件夹（同一个 MCP 地址）里同时开多个 agent 进程、并行开发同一 runner 上不同 project 的用户，我希望当前 project 按 MCP 会话隔离：一个会话切换不影响其他会话，新会话未选择时报错而不会沿用别的会话的选择。同一 agent 进程内共用一个 MCP 会话（如 subagent、清空对话后的新对话）则共享选择。
 
 ### 文件操作（agent）
 
@@ -115,7 +115,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 
 ### server 状态与 key
 
-- 状态文件结构：以 key 为键，值包含备注名、创建时间、当前 project（可空）。
+- 状态文件结构：以 key 为键，值包含备注名、创建时间。旧版本写入的当前 project 字段在加载时忽略。
 - 状态文件只由运行中的 server 进程拥有：启动时读取一次；运行时变更先改内存，延迟 100ms 写盘（等待期间再有变更则重置计时），写入采用临时文件 + 原子重命名；收到退出信号时立即写盘。
 - key 管理 CLI 通过数据目录下的 unix socket 管理通道请求运行中的 server 执行；连不上（server 未运行）时直接读写状态文件。
 - 删除 key：立即从内存移除，向在线 runner 发送"key 已移除" close code；之后的 MCP 请求返回 404；用该 key 的握手同样被拒。
@@ -124,7 +124,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 
 - runner 主动建立 WebSocket；普通断线指数退避重连。
 - 同一 key 新连接到来时踢掉旧连接（"已被替代" close code）；收到该 code 或"key 已移除" code 的 runner 打印提示并退出，不重连。
-- server 在 runner 断线时清空该 key 缓存的 project 列表（当前 project 选择仍保留在状态文件中）。
+- server 在 runner 断线时清空该 key 缓存的 project 列表（各 MCP 会话的当前 project 选择不受影响）。
 - runner 离线时所有 11 个 MCP 工具立即返回 "runner offline"。
 - 工具调用超时约 60 秒；`bash` 与 `bash_result` 为 `wait` + 30 秒。
 - server 放弃等待某个请求时（超时、agent 取消 MCP 请求）向 runner 发送取消消息；runner 取消该请求：`bash` 在同步等待期间被取消时杀掉进程树，`bash_result` 被取消只是停止等待。runner 断线不取消任何请求，命令继续运行，重连后可用 `bash_result` 取回结果；runner 重启则任务记录丢失。
@@ -136,7 +136,8 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 - SDK 默认只允许 loopback Host，需要放开以支持远程访问。
 - 暴露 11 个工具：`read`、`write`、`edit`、`bash`、`bash_result`、`bash_kill`、`grep`、`find`、`list_project`、`select_project`、`current_project`。不提供 ls。
 - `grep` / `find` 照搬 pi，分别调用 runner 上的 ripgrep（`rg`）与 fd（`fd`；PATH 中没有 `fd` 而有 `fdfind` 时用后者，即 Debian/Ubuntu 的包名）；默认它们已在 PATH 中，不下载。
-- 当前 project 挂在 key 上（全局），不依赖 MCP 会话（新版 MCP 规范已移除会话）。
+- 当前 project 挂在 MCP 会话上：服务实例为每个会话新建 handler，各自在内存中持有选择，不持久化、也不回退到 key 级选择。会话空闲超时 24 小时（SDK 默认 5 分钟）；server 重启或会话过期后客户端以新会话重连，需要重新选择，未选择时的报错说明了这些可能原因。
+- bash 后台任务（`bash_result` / `bash_kill`）仍按 runner 共享，不按会话隔离。
 
 ### project 与路径
 
@@ -155,7 +156,7 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 
 - **好测试的标准**：只通过模块对外接口断言外部可观察行为（工具返回的内容/错误文本、文件系统最终状态、连接被关闭及 close code、HTTP 状态码），不断言内部数据结构、私有函数或调用顺序。重构内部实现时测试不应需要改动。
 - **两层测试接缝**：
-  1. **MCP 接缝（主）**：同一测试进程内启动 server（临时数据目录、随机端口）和 runner，用 MCP 客户端经 `/mcp/<key>` 发起真实调用。覆盖：未选择 project 时文件工具报错；list/select/current_project；相对/绝对路径 read；范围外 read 成功、范围外 write/edit 被拒、软链逃逸被拒；edit 多处替换与模糊匹配的端到端效果；读取 png 得到 image 内容；runner 断开后所有工具立即 "runner offline"；同 key 第二个 runner 接入后旧 runner 收到"已被替代"；`key rm` 后 runner 收到"已移除"且 MCP 返回 404；server 运行中经管理通道创建的 key 立即可用且不被延迟写覆盖；当前 project 选择在 server 重启后保留。
+  1. **MCP 接缝（主）**：同一测试进程内启动 server（临时数据目录、随机端口）和 runner，用 MCP 客户端经 `/mcp/<key>` 发起真实调用。覆盖：未选择 project 时文件工具报错；list/select/current_project；相对/绝对路径 read；范围外 read 成功、范围外 write/edit 被拒、软链逃逸被拒；edit 多处替换与模糊匹配的端到端效果；读取 png 得到 image 内容；runner 断开后所有工具立即 "runner offline"；同 key 第二个 runner 接入后旧 runner 收到"已被替代"；`key rm` 后 runner 收到"已移除"且 MCP 返回 404；server 运行中经管理通道创建的 key 立即可用且不被延迟写覆盖；同一 MCP 地址的两个会话选择互不影响；server 重启后新会话未选择 project。
   2. **文件工具模块接缝（补充）**：针对 pi 语义中组合数量大的细节，直接调用文件工具模块的公开接口：截断边界（行数/字节先到、单行超 50KB、limit 提前停止）、offset 越界、CRLF/BOM 保留、模糊匹配各类归一、唯一性/重叠/空文本/无变化错误文案、宽松参数解析、路径规范化、写范围判断（含软链、`..`、新文件祖先目录）。
 - **Prior art**：仓库目前为空，无既有测试；以 pi 源码中的行为与错误文案作为期望值来源。
 - **执行环境**：本地无 Rust 环境，所有测试在 GitHub Actions 上运行，push 到 `dev/` 前缀分支时触发（clippy、全部测试；不检查格式）。
@@ -166,7 +167,8 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 - 多用户、账号体系、权限分级。
 - 内置 TLS / ACME。
 - 一个 key 同时服务多个 runner、负载均衡或 runner 高可用。
-- 按 MCP 会话隔离当前 project。
+- 同一 project 被多个会话同时修改时的冲突保护。
+- 不保留 MCP 会话的客户端（每个请求都是新会话）下记住当前 project。
 - server 地址和 key 的热加载（修改后需重启 runner）。
 - runner 注册凭证与 agent 访问凭证分离（当前共用同一个 UUID key）。
 - Windows 上的 server 管理通道（unix socket）。
@@ -174,5 +176,6 @@ runner 上可以注册多个 **project**：每个 project 有一个必填的主�
 ## Further Notes
 
 - **安全取舍**：MCP 地址中的 UUID 即全部凭证，泄露等同于给出该 runner 上任意文件的读权限与 project 范围内的写权限；同一 key 也可被用来冒充 runner。这是为简化使用而接受的风险，key 泄露时应立即 `key rm`。
+- **依赖 MCP 会话**：当前 project 的隔离依赖 Streamable HTTP 的 `Mcp-Session-Id`。若客户端改用不带会话的协议版本（SDK 对无会话请求每次新建 handler），选择将无法保留，届时需改为每次调用携带 project 参数等方案。
 - **读不受限**：`read` 可读取 runner 上该进程有权限读取的任何文件（包括密钥文件），应以低权限用户运行 runner。
 - 参考实现：pi coding agent 的 read / write / edit / truncate / path 工具源码；官方 Rust MCP SDK 的 Streamable HTTP 服务端。
